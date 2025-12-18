@@ -8,26 +8,34 @@ export enum TileType {
   SINK = 6,
   BLOCK = 7,
   PORTAL = 8,
-  SWITCH = 9, // Activates gates when hit by beam
-  GATE = 10,  // Blocked until a switch is hit
+  SWITCH = 9,
+  GATE = 10,
+  SUPERPOSITION = 11,
 }
 
-// 0: Up, 1: Right, 2: Down, 3: Left
 export type Direction = 0 | 1 | 2 | 3;
 
 export enum EntanglementGroup {
   NONE = 'none',
-  ALPHA = 'alpha', // Blue
-  BETA = 'beta',   // Pink
-  GAMMA = 'gamma', // Green
+  ALPHA = 'alpha',
+  BETA = 'beta',
+  GAMMA = 'gamma',
+}
+
+export enum EnemyType {
+  STALKER = 'stalker',     // Red - High disruption
+  SPRINTER = 'sprinter',   // Yellow - Fast movement
+  GLITCHER = 'glitcher',   // Green - Fixes tiles temporarily
+  FLITTER = 'flitter',     // Purple - Jumps obstacles
 }
 
 export interface TileState {
   type: TileType;
-  rotation: number; // 0-3
-  fixed: boolean; // If true, player cannot rotate manually
+  rotation: number;
+  fixed: boolean;
   group: EntanglementGroup;
   id: string;
+  tempFixedUntil?: number; // For Glitcher ability
 }
 
 export interface GridPos {
@@ -39,13 +47,15 @@ export interface Enemy {
   id: string;
   r: number;
   c: number;
+  type: EnemyType;
+  moveTick: number; // For varied speeds
 }
 
 export interface LevelData {
   id: number;
-  size: number; // Grid size (e.g., 5 for 5x5)
+  size: number;
   tiles: TileState[][];
-  par: number; // Target moves
+  par: number;
   description?: string;
 }
 
@@ -54,8 +64,8 @@ export interface BeamSegment {
   c: number;
   entryDir: Direction;
   exitDir: Direction | null;
-  active: boolean; // Is this segment lit?
-  isTeleport?: boolean; // For visual rendering of portals
+  active: boolean;
+  isTeleport?: boolean;
   teleportTo?: GridPos;
 }
 
@@ -65,5 +75,7 @@ export interface GameState {
   enemies: Enemy[];
   moves: number;
   isComplete: boolean;
-  history: TileState[][][]; // Simple undo history
+  history: TileState[][][];
+  lastNoisePos: GridPos | null;
+  tickCount: number;
 }

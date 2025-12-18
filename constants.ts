@@ -24,7 +24,6 @@ const createLevel = (id: number, size: number, layout: string[], par: number, de
       const char = rowStr[c] || '.';
       let tile = T(TileType.EMPTY);
       
-      // Map
       if (char === 'S') tile = T(TileType.SOURCE, 1, true); 
       if (char === 'V') tile = T(TileType.SOURCE, 2, true); 
       if (char === 'E') tile = T(TileType.SINK, 0, true);
@@ -45,6 +44,7 @@ const createLevel = (id: number, size: number, layout: string[], par: number, de
       if (char === '&') tile = T(TileType.PORTAL, 0, true, EntanglementGroup.BETA);
       if (char === '*') tile = T(TileType.SWITCH, 0, true);
       if (char === 'G') tile = T(TileType.GATE, 0, false); 
+      if (char === '?') tile = T(TileType.SUPERPOSITION, 0, false); 
 
       row.push(tile);
     }
@@ -65,59 +65,56 @@ export const LEVELS: LevelData[] = [
   createLevel(9, 6, ["S-L...","..|...","..C...","..|...","..A-E.","......"], 14, "Quantum Tunneling."),
   createLevel(10, 6, ["S-L...","..|...","..L-L.","....+.","....LE","......"], 15, "Long Path."),
 
-  // FIXED LEVEL 11
   createLevel(11, 6, [
-    "S-J...",  // (0,2) is J (Turns R->D)
-    "..@...",  // (1,2) is @
-    "......",
-    "..@...",  // (3,2) is @
-    "..L-7.",  // (4,2) is L (Turns D->R), (4,4) is 7 (Turns R->D)
-    "....E."
-  ], 12, "Wormhole: Redesigned."),
-
-  // FIXED LEVEL 12
-  createLevel(12, 6, [
-    "S---@.",  // (0,4) is @
-    "....|.",
-    ".@--J.",  // (2,1) is @, (2,4) is J
-    ".|....",
-    ".L--7.",  // (4,1) is L, (4,4) is 7
-    "....E."
-  ], 14, "Portal Maze."),
-
-  // FIXED LEVEL 13
-  createLevel(13, 6, [
-    "S-A-@.",
-    "....|.",
-    "..@-J.",
+    "S-7...", 
     "..|...",
-    "..L-7.",
-    "....E."
-  ], 16, "Alpha Jump."),
-
-  // --- NEW MECHANICS (SWITCHES & GATES) ---
-  createLevel(14, 6, [
-    "S-*...", // (0,2) is * (Switch)
+    "..@...", 
+    "....@.",
     "....|.",
-    "..G-L.", // (2,2) is G (Gate)
+    "....LE"
+  ], 10, "Tunneling: S-7 to Portal."),
+
+  createLevel(12, 6, [
+    "S-7...",
+    "..|...",
+    "..L-@.", 
+    "......",
+    "..@-7.", 
+    "....LE"
+  ], 12, "Phase Jump: Solvable Flow."),
+
+  // REDESIGNED LEVEL 13 - Solvable superposition corridor
+  createLevel(13, 6, [
+    "S-?...", 
+    "..|...",
+    "..L-?.", 
+    "....|.",
+    "..L-J.", 
+    "..E..."
+  ], 8, "Observation Collapse: Verify the Path."),
+
+  createLevel(14, 6, [
+    "S-*...", 
+    "....|.",
+    "..G-?.", 
     "..|...",
     "..L-E.",
     "......"
-  ], 8, "Logic Gate: Hit the switch to open the fence."),
+  ], 8, "Logic Gate."),
 
   createLevel(15, 6, [
-    "S-L...",
-    "..G-@.", // Gate blocking Portal
-    "..*...", // Switch below gate
+    "S-?...",
+    "..G-@.", 
+    "..*...", 
     "......",
-    "..@-L.",
+    "..@-?.",
     "....E."
-  ], 10, "Sequence."),
+  ], 10, "Quantum Sequence."),
 
   createLevel(16, 6, [
     "S-J...",
     "..*...",
-    "L-G-7.", // Must hit switch to pass through G
+    "L-G-7.", 
     "|.....",
     "L---E."
   ], 12, "U-Turn."),
@@ -163,7 +160,7 @@ export const LEVELS: LevelData[] = [
   ], 14, "Power Grid."),
 
   createLevel(21, 7, [
-    "S-L.L-L",
+    "S-?..?.",
     "..|.|..",
     "..L+L..",
     "...*...",

@@ -11,7 +11,14 @@ const getNextPosition = (pos: GridPos, dir: Direction): GridPos => {
 };
 
 const getExitDirection = (tile: TileState, entryDir: Direction, gatesOpen: boolean): Direction | null => {
-  const { type, rotation } = tile;
+  let { type, rotation } = tile;
+
+  // Quantum Superposition Logic:
+  // If it's a superposition tile, it "collapses" into a fixed state when observed by the beam.
+  // We determine its state based on its current rotation mod 2.
+  if (type === TileType.SUPERPOSITION) {
+    type = (rotation % 2 === 0) ? TileType.STRAIGHT : TileType.CORNER;
+  }
 
   switch (type) {
     case TileType.EMPTY:
@@ -21,7 +28,6 @@ const getExitDirection = (tile: TileState, entryDir: Direction, gatesOpen: boole
     
     case TileType.GATE:
       if (!gatesOpen) return null;
-      // If open, acts as a straight tile in the current rotation
       if (rotation % 2 === 0) {
         if (entryDir === DIRECTIONS.UP || entryDir === DIRECTIONS.DOWN) return entryDir;
       } else {
@@ -146,14 +152,10 @@ const trace = (grid: TileState[][], gatesOpen: boolean): { path: BeamSegment[], 
 };
 
 export const calculateBeam = (grid: TileState[][]): { path: BeamSegment[], isComplete: boolean, gatesOpen: boolean } => {
-  // Pass 1: Gates closed
   let result = trace(grid, false);
-  
-  // Pass 2: If switch hit, re-calculate with gates open
   if (result.switchHit) {
     const finalResult = trace(grid, true);
     return { ...finalResult, gatesOpen: true };
   }
-
   return { ...result, gatesOpen: false };
 };

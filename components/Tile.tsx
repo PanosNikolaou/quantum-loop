@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { TileState, TileType, EntanglementGroup } from '../types';
-import { Lock, Zap, Target, X, Infinity, Square, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Lock, Zap, Target, X, Infinity, Square, ShieldAlert, Ghost, ShieldCheck } from 'lucide-react';
 
 interface TileProps {
   tile: TileState;
@@ -18,13 +18,15 @@ const Tile: React.FC<TileProps> = ({ tile, onClick, size }) => {
   const isEntangled = tile.group !== EntanglementGroup.NONE;
   
   const groupColor = useMemo(() => {
+    if (tile.tempFixedUntil) return 'border-neon-green shadow-[0_0_15px_rgba(57,255,20,0.6)] bg-neon-green/20 animate-pulse';
+    
     switch(tile.group) {
       case EntanglementGroup.ALPHA: return 'border-neon-blue shadow-[0_0_15px_rgba(76,201,240,0.4)] bg-neon-blue/10';
       case EntanglementGroup.BETA: return 'border-neon-pink shadow-[0_0_15px_rgba(247,37,133,0.4)] bg-neon-pink/10';
       case EntanglementGroup.GAMMA: return 'border-neon-green shadow-[0_0_15px_rgba(57,255,20,0.4)] bg-neon-green/10';
       default: return 'border-white/20 bg-game-ui/50 hover:bg-game-ui/80';
     }
-  }, [tile.group]);
+  }, [tile.group, tile.tempFixedUntil]);
 
   const innerColor = useMemo(() => {
      switch(tile.group) {
@@ -45,6 +47,13 @@ const Tile: React.FC<TileProps> = ({ tile, onClick, size }) => {
         return <div className="w-full h-full bg-black/40 flex items-center justify-center"><X className="w-1/3 h-1/3 text-white/30" /></div>;
       case TileType.SWITCH:
         return <div className="w-full h-full flex items-center justify-center"><Square className="w-2/3 h-2/3 text-neon-yellow fill-neon-yellow/20" /></div>;
+      case TileType.SUPERPOSITION:
+        return (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Ghost className="w-1/2 h-1/2 text-white/40 animate-pulse" />
+            <div className="absolute inset-0 border-2 border-white/20 border-dotted rounded-xl animate-spin-slow opacity-30" />
+          </div>
+        );
       case TileType.GATE:
         return (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -66,7 +75,6 @@ const Tile: React.FC<TileProps> = ({ tile, onClick, size }) => {
         return (
           <div className="absolute inset-0 pointer-events-none">
              <div className={`absolute top-0 right-0 w-1/2 h-1/2 border-l-[6px] border-b-[6px] rounded-bl-2xl ${innerColor} border-current`} />
-             {isEntangled && <div className={`absolute top-2 right-2 w-2 h-2 rounded-full ${innerColor.replace('text', 'bg')} animate-ping-slow`} />}
           </div>
         );
       case TileType.STRAIGHT:
@@ -94,7 +102,7 @@ const Tile: React.FC<TileProps> = ({ tile, onClick, size }) => {
     >
       <button
         onClick={onClick}
-        disabled={tile.fixed || tile.type === TileType.BLOCK || tile.type === TileType.EMPTY || tile.type === TileType.SWITCH}
+        disabled={tile.fixed || tile.tempFixedUntil !== undefined || tile.type === TileType.BLOCK || tile.type === TileType.EMPTY}
         className={`
           w-full h-full rounded-2xl border-2 
           flex items-center justify-center
@@ -102,16 +110,22 @@ const Tile: React.FC<TileProps> = ({ tile, onClick, size }) => {
           active:scale-95 transition-all duration-150
           backdrop-blur-sm
           ${groupColor}
-          ${tile.fixed ? 'opacity-90' : 'cursor-pointer shadow-lg'}
+          ${tile.fixed || tile.tempFixedUntil ? 'opacity-90' : 'cursor-pointer shadow-lg'}
         `}
       >
         <div style={rotationStyle} className="w-full h-full flex items-center justify-center relative">
             {renderIcon()}
         </div>
         
-        {tile.fixed && tile.type !== TileType.BLOCK && tile.type !== TileType.SOURCE && tile.type !== TileType.SINK && tile.type !== TileType.PORTAL && tile.type !== TileType.SWITCH && (
+        {tile.fixed && (
           <div className="absolute top-1 right-1">
              <Lock className="w-3 h-3 text-white/40" />
+          </div>
+        )}
+
+        {tile.tempFixedUntil && (
+          <div className="absolute top-1 left-1">
+             <ShieldCheck className="w-3 h-3 text-neon-green" />
           </div>
         )}
       </button>

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { TileState, BeamSegment, GridPos, Enemy } from '../types';
+import { TileState, BeamSegment, GridPos, Enemy, EnemyType } from '../types';
 import Tile from './Tile';
 
 interface BoardProps {
@@ -8,16 +8,16 @@ interface BoardProps {
   beamPath: BeamSegment[];
   onRotate: (pos: GridPos) => void;
   isComplete: boolean;
+  lastNoisePos: GridPos | null;
 }
 
-const Board: React.FC<BoardProps> = ({ grid, enemies = [], beamPath, onRotate, isComplete }) => {
+const Board: React.FC<BoardProps> = ({ grid, enemies = [], beamPath, onRotate, isComplete, lastNoisePos }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [boardSize, setBoardSize] = useState(0);
 
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
-        // Limit max width to keep it square and fitting on screen
         const w = Math.min(window.innerWidth - 32, 500); 
         setBoardSize(w);
       }
@@ -32,8 +32,6 @@ const Board: React.FC<BoardProps> = ({ grid, enemies = [], beamPath, onRotate, i
   const gridSize = grid.length;
   const tileSize = boardSize / gridSize;
 
-  // Render Beam SVG
-  // Convert grid coordinates to SVG coordinates (center of tiles)
   const getCoord = (r: number, c: number) => {
     return {
       x: c * tileSize + tileSize / 2,
@@ -43,18 +41,14 @@ const Board: React.FC<BoardProps> = ({ grid, enemies = [], beamPath, onRotate, i
 
   const renderBeam = () => {
     if (beamPath.length < 2) return null;
-    
-    // Create path string
-    // M startX startY L nextX nextY ...
     let d = "";
-    
     beamPath.forEach((seg, index) => {
       const { x, y } = getCoord(seg.r, seg.c);
       if (index === 0) d += `M ${x} ${y}`;
       else d += ` L ${x} ${y}`;
     });
 
-    const color = isComplete ? '#00ff41' : '#00f3ff';
+    const color = isComplete ? '#39ff14' : '#4CC9F0';
 
     return (
       <svg className="absolute inset-0 pointer-events-none z-10 overflow-visible" width={boardSize} height={boardSize}>
@@ -67,28 +61,8 @@ const Board: React.FC<BoardProps> = ({ grid, enemies = [], beamPath, onRotate, i
             </feMerge>
           </filter>
         </defs>
-        
-        {/* Glow Layer */}
-        <path 
-          d={d} 
-          stroke={color} 
-          strokeWidth={6} 
-          fill="none" 
-          opacity="0.4"
-          filter="url(#glow)"
-        />
-        
-        {/* Core Beam */}
-        <path 
-          d={d} 
-          stroke="white" 
-          strokeWidth={2} 
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        
-        {/* Beam Head Pulse */}
+        <path d={d} stroke={color} strokeWidth={6} fill="none" opacity="0.4" filter="url(#glow)" />
+        <path d={d} stroke="white" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
         {beamPath.length > 0 && (
            <circle cx={getCoord(beamPath[beamPath.length-1].r, beamPath[beamPath.length-1].c).x} 
                    cy={getCoord(beamPath[beamPath.length-1].r, beamPath[beamPath.length-1].c).y} 
@@ -98,28 +72,79 @@ const Board: React.FC<BoardProps> = ({ grid, enemies = [], beamPath, onRotate, i
     );
   };
 
+  const DinosaurFaceIcon = ({ type, color }: { type: EnemyType, color: string }) => {
+    const renderFeatures = () => {
+      switch (type) {
+        case EnemyType.SPRINTER:
+          return <path d="M20,30 L10,20 M20,40 L5,35" stroke={color} strokeWidth="3" />; // Feathers/Speed lines
+        case EnemyType.STALKER:
+          return <path d="M40,10 L50,0 L60,10" fill={color} />; // Horn
+        case EnemyType.GLITCHER:
+          return <circle cx="45" cy="45" r="5" fill="#39ff14" className="animate-ping" />; // Glowing eye
+        case EnemyType.FLITTER:
+          return <path d="M10,40 Q0,20 20,20 T40,40" fill={color} opacity="0.6" />; // Wings
+        default: return null;
+      }
+    };
+
+    return (
+      <svg viewBox="0 0 100 100" fill={color} className="w-full h-full drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">
+        {renderFeatures()}
+        <path d="M20,40 Q20,10 60,10 T90,50 L90,80 Q90,90 70,90 L40,90 Q20,90 20,70 Z" />
+        <circle cx="65" cy="35" r="8" fill="white" />
+        <circle cx="68" cy="32" r="3" fill="black" />
+        <path d="M40,75 L80,75" stroke="black" strokeWidth="3" strokeLinecap="round" />
+        <path d="M50,75 L55,82 L60,75 L65,82 L70,75" fill="white" />
+      </svg>
+    );
+  };
+
+  const getDinoMeta = (type: EnemyType) => {
+    switch (type) {
+      case EnemyType.SPRINTER: return { color: '#FFD60A', label: 'RAPTOR' };
+      case EnemyType.STALKER: return { color: '#F72585', label: 'T-REX' };
+      case EnemyType.GLITCHER: return { color: '#39ff14', label: 'SPITTER' };
+      case EnemyType.FLITTER: return { color: '#7209B7', label: 'PTERO' };
+      default: return { color: '#ef4444', label: 'STALKER' };
+    }
+  };
+
   const renderEnemies = () => {
     return enemies.map((enemy) => {
+      const { x, y } = getCoord(enemy.r, enemy.c);
+      const meta = getDinoMeta(enemy.type);
       return (
         <div
           key={enemy.id}
-          className="absolute z-20 pointer-events-none transition-all duration-500 ease-in-out"
+          className="absolute z-20 pointer-events-none transition-all duration-700 ease-in-out"
           style={{
-            width: tileSize * 0.6,
-            height: tileSize * 0.6,
-            left: enemy.c * tileSize + tileSize * 0.2,
-            top: enemy.r * tileSize + tileSize * 0.2,
+            width: tileSize * 0.9,
+            height: tileSize * 0.9,
+            left: x - tileSize * 0.45,
+            top: y - tileSize * 0.45,
           }}
         >
-          <div className="w-full h-full bg-red-500 rounded-full animate-bounce shadow-[0_0_15px_rgba(239,68,68,0.8)] relative">
-            <div className="absolute inset-0 bg-orange-500 rounded-full opacity-50 blur-sm animate-pulse"></div>
-            {/* Glitch Eyes */}
-            <div className="absolute top-1/4 left-1/4 w-1 h-1 bg-white rounded-full"></div>
-            <div className="absolute top-1/4 right-1/4 w-1 h-1 bg-white rounded-full"></div>
+          <div className="w-full h-full animate-bounce">
+            <DinosaurFaceIcon type={enemy.type} color={meta.color} />
+            <div className="absolute top-[-14px] left-1/2 -translate-x-1/2 text-[7px] font-black text-white bg-black/60 px-1.5 py-0.5 rounded-full border border-white/20 whitespace-nowrap uppercase tracking-tighter">
+              {meta.label}
+            </div>
           </div>
         </div>
       );
     });
+  };
+
+  const renderNoiseRipple = () => {
+    if (!lastNoisePos) return null;
+    const { x, y } = getCoord(lastNoisePos.r, lastNoisePos.c);
+    return (
+      <div 
+        key={`ripple-${lastNoisePos.r}-${lastNoisePos.c}-${Date.now()}`}
+        className="absolute pointer-events-none z-30 w-12 h-12 rounded-full border-2 border-neon-pink/40 animate-ping"
+        style={{ left: x - 24, top: y - 24 }}
+      />
+    );
   };
 
   return (
@@ -128,7 +153,6 @@ const Board: React.FC<BoardProps> = ({ grid, enemies = [], beamPath, onRotate, i
       className="relative mx-auto"
       style={{ width: boardSize, height: boardSize }}
     >
-      {/* Grid */}
       <div 
         className="grid absolute inset-0 z-0"
         style={{ 
@@ -148,10 +172,8 @@ const Board: React.FC<BoardProps> = ({ grid, enemies = [], beamPath, onRotate, i
         ))}
       </div>
 
-      {/* Enemies Layer */}
+      {renderNoiseRipple()}
       {renderEnemies()}
-
-      {/* Light Overlay */}
       {renderBeam()}
     </div>
   );
