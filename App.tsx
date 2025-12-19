@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, RotateCcw, Menu, Star, ChevronRight, Lock, Timer, AlertTriangle, Volume2, VolumeX, Ghost, Bomb, Crosshair, Target, Gift } from 'lucide-react';
+import { Play, RotateCcw, Menu, Star, ChevronRight, Lock, Timer, AlertTriangle, Volume2, VolumeX, Ghost, Bomb, Crosshair, Target, Gift, BookOpen } from 'lucide-react';
 import { LEVELS } from './constants';
 import { GameState, EntanglementGroup, GridPos, Enemy, TileType, EnemyType } from './types';
 import { calculateBeam } from './utils/gameLogic';
 import Board from './components/Board';
 import RacingGame from './components/RacingGame';
+import Instructions from './components/Instructions';
 import { audioManager } from './utils/audio';
 
-type Screen = 'MENU' | 'GAME' | 'LEVEL_SELECT' | 'WIN' | 'GAME_OVER' | 'RACING';
+type Screen = 'MENU' | 'GAME' | 'LEVEL_SELECT' | 'WIN' | 'GAME_OVER' | 'RACING' | 'INSTRUCTIONS';
 
 const vibrate = (ms: number | number[]) => {
   try { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms); } catch (e) { }
@@ -73,12 +74,11 @@ const App: React.FC = () => {
     setCurrentLevelId(levelId);
   }, [bombs]);
 
-  // Quantum Santa Random Event - Rarer now
+  // Quantum Santa Random Event
   useEffect(() => {
     if (screen !== 'GAME' || !gameState || gameState.isComplete || santaActive) return;
 
     const santaInterval = setInterval(() => {
-      // 5% chance every 15 seconds, only if enemies exist
       if (gameState.enemies.length > 0 && Math.random() < 0.05) {
         triggerSanta();
       }
@@ -90,7 +90,7 @@ const App: React.FC = () => {
   const triggerSanta = () => {
     setSantaActive(true);
     vibrate(50);
-    audioManager.playSanta(); // Trigger funny sound
+    audioManager.playSanta();
     setTimeout(() => {
       if (!gameState || gameState.enemies.length === 0) {
         setSantaActive(false);
@@ -219,13 +219,23 @@ const App: React.FC = () => {
 
   if (screen === 'MENU') {
     return (
-      <div className="h-screen w-full bg-game-bg flex flex-col items-center justify-center p-6 text-center space-y-12 relative overflow-hidden">
+      <div className="h-screen w-full bg-game-bg flex flex-col items-center justify-center p-6 text-center space-y-10 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-neon-purple/20 via-transparent to-transparent opacity-50" />
         <h1 className="text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-neon-blue via-neon-pink to-neon-purple animate-pulse-fast drop-shadow-2xl z-10">QUANTUM<br/>LOOP</h1>
-        <button onClick={() => setScreen('LEVEL_SELECT')} className="px-12 py-6 bg-gradient-to-r from-neon-blue to-neon-purple rounded-full text-2xl font-black text-white shadow-[0_0_30px_rgba(76,201,240,0.4)] hover:scale-105 active:scale-95 transition-all z-10">INITIATE SECTOR</button>
+        
+        <div className="flex flex-col gap-4 w-full max-w-xs z-10">
+          <button onClick={() => setScreen('LEVEL_SELECT')} className="px-12 py-6 bg-gradient-to-r from-neon-blue to-neon-purple rounded-3xl text-2xl font-black text-white shadow-[0_0_30px_rgba(76,201,240,0.4)] hover:scale-105 active:scale-95 transition-all">
+            INITIATE
+          </button>
+          <button onClick={() => setScreen('INSTRUCTIONS')} className="px-8 py-4 bg-game-ui/40 border border-white/10 rounded-2xl text-lg font-bold text-white flex items-center justify-center gap-2 hover:bg-game-ui/60 transition-all">
+            <BookOpen size={24} className="text-neon-pink" /> HOW TO PLAY
+          </button>
+        </div>
       </div>
     );
   }
+
+  if (screen === 'INSTRUCTIONS') return <Instructions onBack={() => setScreen('MENU')} />;
 
   if (screen === 'RACING') return <RacingGame onWin={() => { setBombs(b => b + 3); if (currentLevelId >= unlockedLevels && currentLevelId < 30) setUnlockedLevels(currentLevelId + 1); setScreen('WIN'); }} onLose={() => setScreen('GAME_OVER')} />;
 
@@ -267,7 +277,6 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-full bg-game-bg flex flex-col overflow-hidden relative">
-      {/* Quantum Santa Layer - Bigger and more Detailed */}
       {santaActive && (
         <div className="absolute top-8 left-0 w-full pointer-events-none z-50 overflow-hidden h-40">
           <style>{`
