@@ -71,7 +71,7 @@ const Instructions: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 icon={Ghost} 
                 color="border-white" 
                 name="Superposition" 
-                desc="Unstable tile. Randomly flips shape until fixed by the light beam." 
+                desc="Dual-Phase: Flips between STRAIGHT and CORNER shapes depending on its rotation value." 
               />
               <SymbolCard 
                 icon={MousePointer2} 
@@ -106,7 +106,7 @@ const Instructions: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                  <div className="p-3 bg-red-600 rounded-2xl animate-bounce"><Gift size={28} /></div>
                  <div>
                     <div className="font-black text-white uppercase text-xs mb-1">Quantum Santa</div>
-                    <p className="text-[10px] font-bold text-white/60 leading-normal">A rare glitch. Santa may fly by and drop gift-bombs on enemies. Listen for the Ho-Ho-Ho!</p>
+                    <p className="text-[10px] font-bold text-white/60 leading-normal">A giant glitch. Santa drops high-yield gift-bombs on random enemies. Listen for his funny Ho-Ho-Ho!</p>
                  </div>
               </div>
            </div>
@@ -117,7 +117,7 @@ const Instructions: React.FC<{ onBack: () => void }> = ({ onBack }) => {
            <div className="text-neon-green font-black uppercase tracking-[0.3em] text-sm border-b border-neon-green/20 pb-2">Stability Phase</div>
            <div className="p-6 rounded-3xl bg-neon-green/5 border-2 border-neon-green/20">
               <p className="text-sm font-bold text-white/80 italic leading-relaxed">
-                Every 5 sectors, you enter a <span className="text-neon-green">Neon Overdrive</span> race. Reach 100% progress without crashing into obstacles to earn bonus bombs and stabilize the quantum stream.
+                Every 5 sectors, you enter a <span className="text-neon-green">Neon Overdrive</span> race. Reach 100% progress without crashing into lane-walls to earn +3 bonus bombs.
               </p>
            </div>
         </div>

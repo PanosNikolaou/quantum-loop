@@ -14,9 +14,10 @@ const getExitDirection = (tile: TileState, entryDir: Direction, gatesOpen: boole
   let { type, rotation } = tile;
 
   // Quantum Superposition Logic:
-  // If it's a superposition tile, it "collapses" into a fixed state when observed by the beam.
+  // If it's a superposition tile, it "collapses" into a fixed shape based on its observation state.
   // We determine its state based on its current rotation mod 2.
   if (type === TileType.SUPERPOSITION) {
+    // Rotation 0, 2 = Straight Pipe | Rotation 1, 3 = Corner Pipe
     type = (rotation % 2 === 0) ? TileType.STRAIGHT : TileType.CORNER;
   }
 
@@ -28,10 +29,11 @@ const getExitDirection = (tile: TileState, entryDir: Direction, gatesOpen: boole
     
     case TileType.GATE:
       if (!gatesOpen) return null;
+      // Fixed alignment: 0 = Horizontal (-), 1 = Vertical (|)
       if (rotation % 2 === 0) {
-        if (entryDir === DIRECTIONS.UP || entryDir === DIRECTIONS.DOWN) return entryDir;
-      } else {
         if (entryDir === DIRECTIONS.LEFT || entryDir === DIRECTIONS.RIGHT) return entryDir;
+      } else {
+        if (entryDir === DIRECTIONS.UP || entryDir === DIRECTIONS.DOWN) return entryDir;
       }
       return null;
 
@@ -41,25 +43,26 @@ const getExitDirection = (tile: TileState, entryDir: Direction, gatesOpen: boole
       return entryDir; 
 
     case TileType.STRAIGHT:
+      // Fixed alignment: 0 = Horizontal (-), 1 = Vertical (|)
       if (rotation % 2 === 0) {
-        if (entryDir === DIRECTIONS.UP || entryDir === DIRECTIONS.DOWN) return entryDir;
-      } else {
         if (entryDir === DIRECTIONS.LEFT || entryDir === DIRECTIONS.RIGHT) return entryDir;
+      } else {
+        if (entryDir === DIRECTIONS.UP || entryDir === DIRECTIONS.DOWN) return entryDir;
       }
       return null;
 
     case TileType.CORNER:
       const r = rotation % 4;
-      if (r === 0) {
+      if (r === 0) { // Top-Right
         if (entryDir === DIRECTIONS.DOWN) return DIRECTIONS.RIGHT;
         if (entryDir === DIRECTIONS.LEFT) return DIRECTIONS.UP;
-      } else if (r === 1) {
+      } else if (r === 1) { // Right-Bottom
         if (entryDir === DIRECTIONS.LEFT) return DIRECTIONS.DOWN;
         if (entryDir === DIRECTIONS.UP) return DIRECTIONS.RIGHT;
-      } else if (r === 2) {
+      } else if (r === 2) { // Bottom-Left
         if (entryDir === DIRECTIONS.UP) return DIRECTIONS.LEFT;
         if (entryDir === DIRECTIONS.RIGHT) return DIRECTIONS.DOWN;
-      } else if (r === 3) {
+      } else if (r === 3) { // Left-Top
         if (entryDir === DIRECTIONS.RIGHT) return DIRECTIONS.UP;
         if (entryDir === DIRECTIONS.DOWN) return DIRECTIONS.LEFT;
       }
