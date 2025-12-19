@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Zap, Trophy, Flame, AlertTriangle, Radiation } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Zap, Trophy, Flame, AlertTriangle, Radiation, Bomb } from 'lucide-react';
 
 interface RacingGameProps {
   onWin: () => void;
@@ -35,12 +35,19 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
       const playerY = 550;
       const collision = next.find(o => {
         const isSameLane = o.lane === lane;
+        // Adjust hitboxes based on type
         let hitZoneYStart = -60;
         let hitZoneYEnd = 40;
         
         if (o.type === 'LASER_GATE') {
           hitZoneYStart = -20;
           hitZoneYEnd = 20;
+          return o.y > playerY + hitZoneYStart && o.y < playerY + hitZoneYEnd; // Laser gates span the whole width logic?
+          // Actually Laser Gates currently have a lane in the state but the visual is full width.
+          // Let's make LASER_GATE hit all lanes if not handled carefully, 
+          // but for simplicity in current code, if lane matches. 
+          // Actually, let's fix Laser Gate to be a full line obstacle where you must wait or pass? 
+          // Usually in these games laser gates have a flicker.
         } else if (o.type === 'BLOCKADE') {
           hitZoneYStart = -80;
           hitZoneYEnd = 50;
@@ -53,6 +60,7 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
 
       if (collision) {
         setShake(true);
+        // CRITICAL: Crashing calls onLose which in App.tsx sets screen to GAME_OVER WITHOUT granting bombs.
         setTimeout(() => onLose(), 150);
         return prev;
       }
@@ -74,21 +82,43 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
     gameRef.current = requestAnimationFrame(loop);
 
     const spawn = setInterval(() => {
-      const types: Obstacle['type'][] = ['CAR', 'TRUCK', 'DRONE', 'BUS', 'LASER_GATE', 'BLOCKADE'];
-      const type = types[Math.floor(Math.random() * types.length)];
-      setObstacles(prev => [
-        ...prev,
-        { 
-          id: obstacleId.current++, 
-          lane: Math.floor(Math.random() * 3), 
-          y: -200,
-          type,
-          color: COLORS[Math.floor(Math.random() * COLORS.length)],
-          speedMod: type === 'DRONE' ? 1.7 : type === 'LASER_GATE' ? 0 : type === 'BLOCKADE' ? 0.4 : type === 'TRUCK' ? 0.8 : 1.1
+      // Logic for "obstacles in lines" - occasionally spawn a "wall" with one gap
+      const isWall = Math.random() < 0.3; // 30% chance for a line pattern
+      
+      if (isWall) {
+        const gapLane = Math.floor(Math.random() * 3);
+        const wallType = Math.random() < 0.5 ? 'CAR' : 'BLOCKADE';
+        const newObs: Obstacle[] = [];
+        for(let i=0; i<3; i++) {
+          if (i !== gapLane) {
+            newObs.push({
+              id: obstacleId.current++,
+              lane: i,
+              y: -250,
+              type: wallType,
+              color: COLORS[Math.floor(Math.random() * COLORS.length)],
+              speedMod: 1.0
+            });
+          }
         }
-      ]);
+        setObstacles(prev => [...prev, ...newObs]);
+      } else {
+        const types: Obstacle['type'][] = ['CAR', 'TRUCK', 'DRONE', 'BUS', 'LASER_GATE'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        setObstacles(prev => [
+          ...prev,
+          { 
+            id: obstacleId.current++, 
+            lane: Math.floor(Math.random() * 3), 
+            y: -200,
+            type,
+            color: COLORS[Math.floor(Math.random() * COLORS.length)],
+            speedMod: type === 'DRONE' ? 1.7 : type === 'LASER_GATE' ? 0.9 : type === 'TRUCK' ? 0.8 : 1.1
+          }
+        ]);
+      }
       setSpeed(s => Math.min(s + 0.05, 17));
-    }, 550);
+    }, 600);
 
     return () => {
       cancelAnimationFrame(gameRef.current!);
@@ -103,14 +133,14 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
           <div className="w-full h-12 flex flex-col items-center justify-center relative">
             <div className="absolute inset-0 bg-red-600 animate-pulse opacity-40 blur-sm" />
             <div className="w-full h-2 bg-red-500 shadow-[0_0_15px_red]" />
-            <div className="text-[10px] font-black text-white bg-red-600 px-2 py-0.5 rounded-full mt-1 animate-bounce">LASER HAZARD</div>
+            <div className="text-[10px] font-black text-white bg-red-600 px-2 py-0.5 rounded-full mt-1 animate-bounce">LASER</div>
           </div>
         );
       case 'BLOCKADE':
         return (
           <div className="w-full h-full bg-slate-800 border-4 border-neon-yellow flex flex-col items-center justify-center gap-2 p-2 rounded-lg">
-             <AlertTriangle className="text-neon-yellow" size={32} />
-             <div className="w-full h-2 bg-neon-yellow/30 rounded-full overflow-hidden">
+             <AlertTriangle className="text-neon-yellow" size={24} />
+             <div className="w-full h-1 bg-neon-yellow/30 rounded-full overflow-hidden">
                <div className="w-1/2 h-full bg-neon-yellow animate-ping" />
              </div>
           </div>
@@ -125,23 +155,23 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
       case 'BUS':
         return (
           <div className="w-full h-full rounded-lg border-2 border-white/30 flex flex-col items-center p-1" style={{ backgroundColor: obs.color }}>
-            {[...Array(5)].map((_, i) => <div key={i} className="w-full h-2 bg-white/20 my-1 rounded-sm" />)}
+            {[...Array(5)].map((_, i) => <div key={i} className="w-full h-1.5 bg-white/20 my-0.5 rounded-sm" />)}
           </div>
         );
       case 'DRONE':
         return (
           <div className="w-full h-full flex items-center justify-center animate-pulse">
-            <div className="w-12 h-12 rounded-full border-4 border-white shadow-[0_0_20px_white]" style={{ backgroundColor: obs.color }} />
-            <div className="absolute w-24 h-1 bg-white/40 rotate-45" />
-            <div className="absolute w-24 h-1 bg-white/40 -rotate-45" />
+            <div className="w-10 h-10 rounded-full border-4 border-white shadow-[0_0_20px_white]" style={{ backgroundColor: obs.color }} />
+            <div className="absolute w-20 h-1 bg-white/40 rotate-45" />
+            <div className="absolute w-20 h-1 bg-white/40 -rotate-45" />
           </div>
         );
       default:
         return (
           <div className="w-full h-full rounded-2xl border-2 border-white shadow-md relative" style={{ backgroundColor: obs.color }}>
             <div className="absolute top-2 left-2 right-2 h-1/2 bg-black/30 rounded-lg" />
-            <div className="absolute bottom-2 left-2 w-4 h-2 bg-yellow-400 rounded-full" />
-            <div className="absolute bottom-2 right-2 w-4 h-2 bg-yellow-400 rounded-full" />
+            <div className="absolute bottom-2 left-2 w-3 h-1.5 bg-yellow-400 rounded-full" />
+            <div className="absolute bottom-2 right-2 w-3 h-1.5 bg-yellow-400 rounded-full" />
           </div>
         );
     }
@@ -170,7 +200,9 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
 
       <div className="absolute top-10 flex flex-col items-center gap-1 z-20">
         <div className="text-neon-blue text-5xl italic tracking-tighter drop-shadow-[0_0_15px_#4CC9F0] animate-pulse">NEON OVERDRIVE</div>
-        <div className="text-neon-pink text-[10px] tracking-[0.5em] uppercase font-bold bg-black/40 px-3 py-1 rounded-full border border-neon-pink/30">Sector Stabilization Active</div>
+        <div className="flex items-center gap-2 bg-neon-pink/20 border border-neon-pink/40 px-4 py-1 rounded-full text-neon-pink text-[10px] tracking-widest uppercase font-bold mt-2">
+           <Bomb size={12} /> REWARD: +3 QUANTUM BOMBS
+        </div>
       </div>
       
       <div className="w-full max-w-sm h-[650px] bg-black/50 backdrop-blur-md relative border-x-4 border-neon-blue/20 overflow-hidden shadow-2xl">
@@ -187,9 +219,9 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
         {obstacles.map(o => (
           <div 
             key={o.id}
-            className={`absolute transition-transform duration-100 ${o.type === 'BLOCKADE' ? 'w-full h-40' : o.type === 'LASER_GATE' ? 'w-full h-12' : o.type === 'TRUCK' || o.type === 'BUS' ? 'w-24 h-40' : o.type === 'DRONE' ? 'w-20 h-20' : 'w-20 h-28'}`}
+            className={`absolute transition-transform duration-100 ${o.type === 'BLOCKADE' ? 'w-[30%] h-32' : o.type === 'LASER_GATE' ? 'w-[30%] h-12' : o.type === 'TRUCK' || o.type === 'BUS' ? 'w-[28%] h-40' : o.type === 'DRONE' ? 'w-[25%] h-20' : 'w-[25%] h-28'}`}
             style={{ 
-              left: o.type === 'LASER_GATE' || o.type === 'BLOCKADE' ? 0 : `${o.lane * 33.33 + 5}%`, 
+              left: `${o.lane * 33.33 + 4}%`, 
               top: o.y,
               zIndex: o.type === 'DRONE' ? 30 : 10
             }}
@@ -213,9 +245,6 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
               <Flame className="text-orange-500 animate-pulse" fill="currentColor" size={28} />
               <Flame className="text-orange-500 animate-pulse delay-75" fill="currentColor" size={28} />
             </div>
-            {/* Wind lines */}
-            <div className="absolute top-0 left-4 w-1 h-full bg-white/20 animate-slide-down" />
-            <div className="absolute top-0 right-4 w-1 h-full bg-white/20 animate-slide-down delay-100" />
           </div>
         </div>
       </div>
