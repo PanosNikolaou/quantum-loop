@@ -189,6 +189,30 @@ class AudioManager {
     carrier.stop(t + 0.2);
     modulator.stop(t + 0.2);
   }
+
+  playSanta() {
+    if (!this.ctx || !this.masterGain || this.isMuted) return;
+    const t = this.ctx.currentTime;
+    
+    // Funny synthesized "Ho Ho Ho" using stepped oscillators
+    const notes = [150, 120, 150, 120, 150, 120];
+    notes.forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+
+      const startTime = t + i * 0.25;
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.1, startTime + 0.05);
+      gain.gain.linearRampToValueAtTime(0, startTime + 0.2);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.2);
+    });
+  }
 }
 
 export const audioManager = new AudioManager();

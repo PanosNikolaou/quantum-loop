@@ -23,10 +23,10 @@ export enum EntanglementGroup {
 }
 
 export enum EnemyType {
-  STALKER = 'stalker',     // Red - High disruption
-  SPRINTER = 'sprinter',   // Yellow - Fast movement
-  GLITCHER = 'glitcher',   // Green - Fixes tiles temporarily
-  FLITTER = 'flitter',     // Purple - Jumps obstacles
+  STALKER = 'stalker',     
+  SPRINTER = 'sprinter',   
+  GLITCHER = 'glitcher',   
+  FLITTER = 'flitter',     
 }
 
 export interface TileState {
@@ -35,7 +35,7 @@ export interface TileState {
   fixed: boolean;
   group: EntanglementGroup;
   id: string;
-  tempFixedUntil?: number; // For Glitcher ability
+  tempFixedUntil?: number; 
 }
 
 export interface GridPos {
@@ -48,7 +48,7 @@ export interface Enemy {
   r: number;
   c: number;
   type: EnemyType;
-  moveTick: number; // For varied speeds
+  moveTick: number; 
 }
 
 export interface LevelData {
@@ -78,4 +78,5 @@ export interface GameState {
   history: TileState[][][];
   lastNoisePos: GridPos | null;
   tickCount: number;
+  bombs: number;
 }

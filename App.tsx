@@ -1,21 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, RotateCcw, Menu, Star, ChevronRight, Lock, Timer, AlertTriangle, Volume2, VolumeX, Ghost } from 'lucide-react';
+import { Play, RotateCcw, Menu, Star, ChevronRight, Lock, Timer, AlertTriangle, Volume2, VolumeX, Ghost, Bomb, Crosshair, Target, Gift } from 'lucide-react';
 import { LEVELS } from './constants';
 import { GameState, EntanglementGroup, GridPos, Enemy, TileType, EnemyType } from './types';
 import { calculateBeam } from './utils/gameLogic';
 import Board from './components/Board';
+import RacingGame from './components/RacingGame';
 import { audioManager } from './utils/audio';
 
-type Screen = 'MENU' | 'GAME' | 'LEVEL_SELECT' | 'WIN' | 'GAME_OVER';
+type Screen = 'MENU' | 'GAME' | 'LEVEL_SELECT' | 'WIN' | 'GAME_OVER' | 'RACING';
 
 const vibrate = (ms: number | number[]) => {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate(ms);
-    }
-  } catch (e) {
-    // Ignore
-  }
+  try { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms); } catch (e) { }
 };
 
 const App: React.FC = () => {
@@ -25,6 +20,14 @@ const App: React.FC = () => {
   const [beamPath, setBeamPath] = useState<any[]>([]);
   const [unlockedLevels, setUnlockedLevels] = useState<number>(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [bombs, setBombs] = useState(3);
+  
+  // Catapult State
+  const [bombMode, setBombMode] = useState(false);
+  const [aimAngle, setAimAngle] = useState(0); 
+  const [aimPower, setAimPower] = useState(50); 
+  const [activeProjectile, setActiveProjectile] = useState<{target: GridPos, id: string, type: 'BOMB' | 'GIFT'} | null>(null);
+  const [santaActive, setSantaActive] = useState(false);
   
   const [timeLeft, setTimeLeft] = useState(0);
   const [maxTime, setMaxTime] = useState(0);
@@ -33,13 +36,8 @@ const App: React.FC = () => {
   const startLevel = useCallback((levelId: number) => {
     audioManager.init();
     audioManager.resume();
-
     const levelData = LEVELS.find(l => l.id === levelId);
     if (!levelData) return;
-
-    const initialGrid = levelData.tiles.map(row => 
-      row.map(tile => ({ ...tile }))
-    );
 
     const calculatedTime = Math.max(15, 90 - (levelId * 2));
     setMaxTime(calculatedTime);
@@ -49,268 +47,203 @@ const App: React.FC = () => {
     if (levelId >= 5) {
       const numEnemies = Math.min(6, Math.floor(levelId / 3)); 
       const types = [EnemyType.STALKER, EnemyType.SPRINTER, EnemyType.GLITCHER, EnemyType.FLITTER];
-      
-      const occupiedInitial = new Set<string>();
+      const occupied = new Set<string>();
       for (let i = 0; i < numEnemies; i++) {
         let r, c;
-        let attempts = 0;
-        do {
-          r = Math.floor(Math.random() * levelData.size);
-          c = Math.floor(Math.random() * levelData.size);
-          attempts++;
-        } while (occupiedInitial.has(`${r},${c}`) && attempts < 20);
-        
-        occupiedInitial.add(`${r},${c}`);
-        const type = types[i % types.length];
-        initialEnemies.push({ 
-          id: `enemy-${i}`, 
-          r, 
-          c, 
-          type, 
-          moveTick: 0 
-        });
+        let tries = 0;
+        do { r = Math.floor(Math.random() * levelData.size); c = Math.floor(Math.random() * levelData.size); tries++; } while (occupied.has(`${r},${c}`) && tries < 20);
+        occupied.add(`${r},${c}`);
+        initialEnemies.push({ id: `enemy-${i}-${Date.now()}`, r, c, type: types[i % types.length], moveTick: 0 });
       }
     }
 
     setGameState({
       levelIndex: levelId,
-      grid: initialGrid,
+      grid: levelData.tiles.map(row => row.map(tile => ({ ...tile }))),
       enemies: initialEnemies,
       moves: 0,
       isComplete: false,
       history: [],
       lastNoisePos: null,
-      tickCount: 0
+      tickCount: 0,
+      bombs: bombs
     });
     setScreen('GAME');
+    setBombMode(false);
     setCurrentLevelId(levelId);
-  }, []);
+  }, [bombs]);
 
-  const handleMuteToggle = () => {
-    const muted = audioManager.toggleMute();
-    setIsMuted(muted);
+  // Quantum Santa Random Event - Rarer now
+  useEffect(() => {
+    if (screen !== 'GAME' || !gameState || gameState.isComplete || santaActive) return;
+
+    const santaInterval = setInterval(() => {
+      // 5% chance every 15 seconds, only if enemies exist
+      if (gameState.enemies.length > 0 && Math.random() < 0.05) {
+        triggerSanta();
+      }
+    }, 15000);
+
+    return () => clearInterval(santaInterval);
+  }, [screen, gameState?.enemies.length, santaActive]);
+
+  const triggerSanta = () => {
+    setSantaActive(true);
+    vibrate(50);
+    audioManager.playSanta(); // Trigger funny sound
+    setTimeout(() => {
+      if (!gameState || gameState.enemies.length === 0) {
+        setSantaActive(false);
+        return;
+      }
+      const randomEnemy = gameState.enemies[Math.floor(Math.random() * gameState.enemies.length)];
+      setActiveProjectile({ target: { r: randomEnemy.r, c: randomEnemy.c }, id: 'santa-gift', type: 'GIFT' });
+      audioManager.playPortal();
+      
+      setTimeout(() => {
+        setGameState(prev => {
+          if (!prev) return null;
+          return { ...prev, enemies: prev.enemies.filter(e => e.id !== randomEnemy.id) };
+        });
+        setActiveProjectile(null);
+        setSantaActive(false);
+      }, 700);
+    }, 2500); 
   };
 
   useEffect(() => {
     if (screen === 'GAME' && !gameState?.isComplete && timeLeft > 0) {
       timerRef.current = window.setInterval(() => {
         setTimeLeft((prev) => {
-          if (prev <= 1) {
-             if (timerRef.current) clearInterval(timerRef.current);
-             setScreen('GAME_OVER');
-             audioManager.playFail();
-             return 0;
-          }
+          if (prev <= 1) { if (timerRef.current) clearInterval(timerRef.current); setScreen('GAME_OVER'); audioManager.playFail(); return 0; }
           return prev - 1;
         });
       }, 1000);
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [screen, gameState?.isComplete]);
 
-  // Unified Tick for AI with Collision
+  // Dinosaur AI
   useEffect(() => {
     if (screen !== 'GAME' || !gameState || gameState.isComplete) return;
-
     const tickInterval = setInterval(() => {
       setGameState(prev => {
         if (!prev || prev.isComplete) return prev;
-        
         const newTick = prev.tickCount + 1;
         const newEnemies: Enemy[] = [];
-        const occupiedInNewState = new Set<string>();
-
-        // We resolve enemies in order. This naturally prevents collisions as we track occupied tiles.
+        const occupied = new Set<string>();
         prev.enemies.forEach(e => {
-          const shouldMove = e.type === EnemyType.SPRINTER || newTick % 2 === 0;
-          
-          if (!shouldMove) {
-            newEnemies.push(e);
-            occupiedInNewState.add(`${e.r},${e.c}`);
-            return;
-          }
-
-          const candidates = [
-            { r: e.r - 1, c: e.c },
-            { r: e.r + 1, c: e.c },
-            { r: e.r, c: e.c - 1 },
-            { r: e.r, c: e.c + 1 },
-          ].filter(pos => 
-            pos.r >= 0 && pos.r < prev.grid.length && 
-            pos.c >= 0 && pos.c < prev.grid[0].length
-          );
-
-          if (candidates.length === 0) {
-            newEnemies.push(e);
-            occupiedInNewState.add(`${e.r},${e.c}`);
-            return;
-          }
-
-          let targetPos = prev.lastNoisePos;
+          if (!(e.type === EnemyType.SPRINTER || newTick % 2 === 0)) { newEnemies.push(e); occupied.add(`${e.r},${e.c}`); return; }
+          const candidates = [{r:e.r-1,c:e.c},{r:e.r+1,c:e.c},{r:e.r,c:e.c-1},{r:e.r,c:e.c+1}].filter(p => p.r>=0 && p.r<prev.grid.length && p.c>=0 && p.c<prev.grid[0].length);
           let move = candidates[Math.floor(Math.random() * candidates.length)];
-
-          if (targetPos) {
-            const bestMove = candidates.reduce((best, curr) => {
-               const currDist = Math.abs(curr.r - targetPos!.r) + Math.abs(curr.c - targetPos!.c);
-               const bestDist = Math.abs(best.r - targetPos!.r) + Math.abs(best.c - targetPos!.c);
-               return currDist < bestDist ? curr : best;
-            }, move);
-            
-            const aggro = e.type === EnemyType.STALKER ? 0.95 : 0.8;
-            if (Math.random() < aggro) {
-               move = bestMove;
-            }
-          }
-
-          // COLLISION DETECTION: Check if target tile is occupied
-          if (occupiedInNewState.has(`${move.r},${move.c}`)) {
-            // Stay put if blocked
-            newEnemies.push(e);
-            occupiedInNewState.add(`${e.r},${e.c}`);
-          } else {
-            // Move successful
-            newEnemies.push({ ...e, r: move.r, c: move.c });
-            occupiedInNewState.add(`${move.r},${move.c}`);
-          }
+          if (prev.lastNoisePos) move = candidates.reduce((best, curr) => (Math.abs(curr.r-prev.lastNoisePos!.r)+Math.abs(curr.c-prev.lastNoisePos!.c)) < (Math.abs(best.r-prev.lastNoisePos!.r)+Math.abs(best.c-prev.lastNoisePos!.c)) ? curr : best, move);
+          if (occupied.has(`${move.r},${move.c}`)) { newEnemies.push(e); occupied.add(`${e.r},${e.c}`); } 
+          else { newEnemies.push({ ...e, r: move.r, c: move.c }); occupied.add(`${move.r},${move.c}`); }
         });
-
-        // Resolve Abiltiies and Disruption on the new positions
         const newGrid = prev.grid.map(row => row.map(t => ({ ...t })));
-        let gridChanged = false;
-
+        let changed = false;
         newEnemies.forEach(e => {
           const tile = newGrid[e.r][e.c];
-          
-          if (!tile.fixed && tile.type !== TileType.EMPTY && tile.type !== TileType.BLOCK) {
-            if (tile.type === TileType.SWITCH) return;
-            
-            const isAtTarget = prev.lastNoisePos && e.r === prev.lastNoisePos.r && e.c === prev.lastNoisePos.c;
-            const chance = isAtTarget ? 0.9 : 0.2;
-
-            if (Math.random() < chance) {
-               if (e.type === EnemyType.GLITCHER) {
-                  tile.tempFixedUntil = newTick + 10;
-               } else if (e.type === EnemyType.STALKER) {
-                  tile.rotation = (tile.rotation + 1) % 4;
-                  gridChanged = true;
-               } else {
-                  tile.rotation = (tile.rotation + 1) % 4;
-                  gridChanged = true;
-               }
-            }
+          if (!tile.fixed && tile.type !== TileType.EMPTY && tile.type !== TileType.BLOCK && tile.type !== TileType.SINK) {
+            if (Math.random() < ((prev.lastNoisePos && e.r === prev.lastNoisePos.r && e.c === prev.lastNoisePos.c) ? 0.6 : 0.05)) { tile.rotation = (tile.rotation + 1) % 4; changed = true; }
           }
         });
-
-        newGrid.forEach(row => row.forEach(tile => {
-          if (tile.tempFixedUntil && tile.tempFixedUntil <= newTick) {
-            delete tile.tempFixedUntil;
-          }
-        }));
-        
-        if (gridChanged) {
-          audioManager.playEnemyEffect();
-        }
-
+        if (changed) audioManager.playEnemyEffect();
         return { ...prev, enemies: newEnemies, grid: newGrid, tickCount: newTick };
       });
-    }, 750);
-
+    }, 1200);
     return () => clearInterval(tickInterval);
   }, [screen, gameState?.isComplete]); 
 
-  const handleRotate = useCallback((pos: GridPos) => {
-    if (!gameState || gameState.isComplete || screen !== 'GAME') return;
+  const launchBomb = () => {
+    if (bombs <= 0 || !gameState) return;
+    
+    const gridRows = gameState.grid.length;
+    const gridCols = gameState.grid[0].length;
+    const maxDist = gridRows * 0.95;
+    const dist = (aimPower / 100) * maxDist;
+    const angleRad = (aimAngle - 90) * (Math.PI / 180);
+    
+    const targetR = Math.round(gridRows - 1 + Math.sin(angleRad) * dist);
+    const targetC = Math.round((gridCols / 2) + Math.cos(angleRad) * dist);
+    
+    const clampedR = Math.max(0, Math.min(gridRows - 1, targetR));
+    const clampedC = Math.max(0, Math.min(gridCols - 1, targetC));
+    const targetPos = { r: clampedR, c: clampedC };
+    
+    setBombMode(false);
+    setActiveProjectile({ target: targetPos, id: Math.random().toString(), type: 'BOMB' });
+    audioManager.playPortal();
+    vibrate([100, 50, 100]);
 
-    const { grid } = gameState;
-    const clickedTile = grid[pos.r][pos.c];
-    if (clickedTile.fixed || clickedTile.tempFixedUntil) return;
-
-    vibrate(10);
-    audioManager.playRotate();
-
-    const newGrid = grid.map(row => row.map(t => ({ ...t })));
-    const targetGroup = clickedTile.group;
-
-    newGrid.forEach((row, r) => {
-      row.forEach((tile, c) => {
-        const isTarget = (r === pos.r && c === pos.c);
-        const isGroupMember = targetGroup !== EntanglementGroup.NONE && tile.group === targetGroup;
-        if (isTarget || isGroupMember) {
-          if (!tile.fixed && !tile.tempFixedUntil) {
-             tile.rotation = (tile.rotation + 1) % 4;
-          }
-        }
+    setTimeout(() => {
+      setBombs(prev => prev - 1);
+      setGameState(prev => {
+        if (!prev) return null;
+        const enemyIndex = prev.enemies.findIndex(e => e.r === targetPos.r && e.c === targetPos.c);
+        if (enemyIndex !== -1) return { ...prev, enemies: prev.enemies.filter((_, i) => i !== enemyIndex) };
+        return prev;
       });
-    });
+      setActiveProjectile(null);
+    }, 700);
+  };
 
-    setGameState(prev => ({
-      ...prev!,
-      grid: newGrid,
-      moves: prev!.moves + 1,
-      lastNoisePos: pos 
+  const handleTileClick = useCallback((pos: GridPos) => {
+    if (!gameState || gameState.isComplete || bombMode) return;
+    const { grid } = gameState;
+    const tile = grid[pos.r][pos.c];
+    if (tile.fixed || tile.tempFixedUntil || tile.type === TileType.EMPTY || tile.type === TileType.BLOCK) return;
+    vibrate(10); audioManager.playRotate();
+    const newGrid = grid.map(row => row.map(t => ({ ...t })));
+    newGrid.forEach((row, r) => row.forEach((t, c) => {
+      if ((r === pos.r && c === pos.c) || (tile.group !== EntanglementGroup.NONE && t.group === tile.group)) {
+        if (!t.fixed && !t.tempFixedUntil) t.rotation = (t.rotation + 1) % 4;
+      }
     }));
-
-  }, [gameState, screen]);
+    setGameState(prev => ({ ...prev!, grid: newGrid, moves: prev!.moves + 1, lastNoisePos: pos }));
+  }, [gameState, bombMode]);
 
   useEffect(() => {
     if (!gameState) return;
     const { path, isComplete } = calculateBeam(gameState.grid);
     setBeamPath(path);
-
     if (isComplete && !gameState.isComplete) {
-       vibrate([50, 50, 100]);
        audioManager.playWin();
        setGameState(prev => ({ ...prev!, isComplete: true }));
        setTimeout(() => {
-         if (currentLevelId >= unlockedLevels && currentLevelId < 30) {
-           setUnlockedLevels(currentLevelId + 1);
-         }
-         setScreen('WIN');
-       }, 1000);
+         if (currentLevelId % 5 === 0) setScreen('RACING');
+         else { if (currentLevelId >= unlockedLevels && currentLevelId < 30) setUnlockedLevels(currentLevelId + 1); setScreen('WIN'); }
+       }, 800);
     }
   }, [gameState?.grid, currentLevelId, unlockedLevels]);
 
   if (screen === 'MENU') {
     return (
       <div className="h-screen w-full bg-game-bg flex flex-col items-center justify-center p-6 text-center space-y-12 relative overflow-hidden">
-        <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] bg-neon-purple rounded-full blur-[120px] opacity-20 animate-pulse"></div>
-        <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] bg-neon-blue rounded-full blur-[120px] opacity-20 animate-pulse"></div>
-        <div className="space-y-4 relative z-10">
-          <h1 className="text-6xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-neon-blue via-neon-purple to-neon-pink animate-pulse-fast drop-shadow-[0_0_15px_rgba(247,37,133,0.5)]">
-            QUANTUM<br/>LOOP
-          </h1>
-          <p className="text-neon-blue font-mono text-sm tracking-[0.3em] uppercase">Observation Collapses Reality</p>
-        </div>
-        <button onClick={() => setScreen('LEVEL_SELECT')} className="group relative px-10 py-5 bg-gradient-to-r from-neon-blue to-neon-purple rounded-full text-xl font-bold text-white shadow-[0_0_20px_rgba(76,201,240,0.4)] hover:shadow-[0_0_40px_rgba(76,201,240,0.6)] transition-all duration-300 transform hover:scale-105 active:scale-95">
-          <span className="relative flex items-center justify-center gap-3"><Play size={24} fill="white" /> INITIATE</span>
-        </button>
+        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-neon-purple/20 via-transparent to-transparent opacity-50" />
+        <h1 className="text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-neon-blue via-neon-pink to-neon-purple animate-pulse-fast drop-shadow-2xl z-10">QUANTUM<br/>LOOP</h1>
+        <button onClick={() => setScreen('LEVEL_SELECT')} className="px-12 py-6 bg-gradient-to-r from-neon-blue to-neon-purple rounded-full text-2xl font-black text-white shadow-[0_0_30px_rgba(76,201,240,0.4)] hover:scale-105 active:scale-95 transition-all z-10">INITIATE SECTOR</button>
       </div>
     );
   }
 
+  if (screen === 'RACING') return <RacingGame onWin={() => { setBombs(b => b + 3); if (currentLevelId >= unlockedLevels && currentLevelId < 30) setUnlockedLevels(currentLevelId + 1); setScreen('WIN'); }} onLose={() => setScreen('GAME_OVER')} />;
+
   if (screen === 'LEVEL_SELECT') {
     return (
-      <div className="h-screen w-full bg-game-bg flex flex-col p-6 overflow-hidden">
-        <div className="flex justify-between items-center mb-6">
-           <button onClick={() => setScreen('MENU')} className="p-2 rounded-full bg-game-panel border border-white/10 text-white hover:bg-neon-pink transition-colors"><RotateCcw size={20}/></button>
-           <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neon-blue to-neon-pink tracking-widest uppercase">Select Sector</h2>
-           <button onClick={handleMuteToggle} className="p-2 rounded-full bg-game-panel border border-white/10 text-white hover:bg-neon-blue transition-colors">
-              {isMuted ? <VolumeX size={20}/> : <Volume2 size={20}/>}
-           </button>
+      <div className="h-screen w-full bg-game-bg flex flex-col p-6">
+        <div className="flex justify-between items-center mb-8">
+           <button onClick={() => setScreen('MENU')} className="p-3 bg-game-panel border border-white/10 text-white rounded-2xl"><RotateCcw size={24}/></button>
+           <h2 className="text-3xl font-black text-white italic tracking-tighter uppercase">Sectors</h2>
+           <button onClick={() => setIsMuted(audioManager.toggleMute())} className="p-3 bg-game-panel border border-white/10 text-white rounded-2xl">{isMuted ? <VolumeX size={24}/> : <Volume2 size={24}/>}</button>
         </div>
-        <div className="flex-1 overflow-y-auto pb-20 grid grid-cols-4 gap-3 content-start">
-          {LEVELS.map((level) => {
-            const isLocked = level.id > unlockedLevels;
-            return (
-              <button key={level.id} disabled={isLocked} onClick={() => startLevel(level.id)} className={`aspect-square rounded-2xl flex flex-col items-center justify-center relative border-2 transition-all duration-200 ${isLocked ? 'border-game-panel bg-game-panel/50 text-white/20' : 'border-neon-blue/30 bg-game-panel hover:bg-neon-purple/20 hover:border-neon-pink text-white hover:shadow-[0_0_15px_rgba(247,37,133,0.3)]'}`}>
-                <span className={`text-xl font-bold ${isLocked ? '' : 'text-neon-blue'}`}>{level.id}</span>
-                {!isLocked && level.id < unlockedLevels && <div className="absolute bottom-1 right-1"><Star size={12} className="text-neon-yellow fill-neon-yellow"/></div>}
-                {isLocked && <Lock size={16} className="absolute opacity-40"/>}
-              </button>
-            );
-          })}
+        <div className="flex-1 overflow-y-auto grid grid-cols-4 gap-4 pb-8">
+          {LEVELS.map(l => (
+            <button key={l.id} disabled={l.id > unlockedLevels} onClick={() => startLevel(l.id)} className={`aspect-square rounded-3xl border-2 flex flex-col items-center justify-center transition-all ${l.id > unlockedLevels ? 'border-game-panel text-white/5' : 'border-neon-blue/30 bg-game-panel/50 text-white shadow-xl hover:border-neon-pink'}`}>
+              <span className="text-2xl font-black">{l.id}</span>
+              {l.id > unlockedLevels && <Lock size={18} className="opacity-40" />}
+            </button>
+          ))}
         </div>
       </div>
     );
@@ -319,69 +252,111 @@ const App: React.FC = () => {
   if (screen === 'GAME_OVER' || screen === 'WIN') {
      const isWin = screen === 'WIN';
      return (
-      <div className="h-screen w-full bg-game-bg flex flex-col items-center justify-center p-8 text-center space-y-8 animate-in fade-in duration-500 relative">
-        <div className={`w-32 h-32 rounded-full ${isWin ? 'bg-neon-green/20 border-neon-green' : 'bg-red-500/20 border-red-500'} flex items-center justify-center border-4 shadow-2xl`}>
-          {isWin ? <Star size={64} className="text-neon-green fill-neon-green animate-bounce" /> : <AlertTriangle size={64} className="text-red-500" />}
+      <div className="h-screen w-full bg-game-bg flex flex-col items-center justify-center p-8 space-y-8 text-center relative overflow-hidden">
+        <div className={`w-32 h-32 rounded-full border-4 flex items-center justify-center ${isWin ? 'border-neon-green bg-neon-green/10' : 'border-red-500 bg-red-500/10'}`}>
+          {isWin ? <Star size={64} className="text-neon-green fill-neon-green" /> : <AlertTriangle size={64} className="text-red-500" />}
         </div>
-        <h2 className="text-5xl font-black text-white">{isWin ? 'STABILIZED' : 'DESTABILIZED'}</h2>
+        <h2 className="text-5xl font-black text-white italic uppercase tracking-tighter">{isWin ? 'Stabilized' : 'Destabilized'}</h2>
         <div className="flex flex-col gap-4 w-full max-w-xs">
-          {isWin && currentLevelId < 30 ? (
-            <button onClick={() => startLevel(currentLevelId + 1)} className="px-8 py-4 bg-gradient-to-r from-neon-green to-emerald-500 text-black rounded-xl font-bold text-lg hover:scale-105 transition-transform flex items-center justify-center gap-2 shadow-lg">NEXT SECTOR <ChevronRight /></button>
-          ) : (
-            <button onClick={() => startLevel(currentLevelId)} className={`px-8 py-4 ${isWin ? 'bg-neon-blue' : 'bg-red-600'} text-white rounded-xl font-bold text-lg hover:scale-105 transition-transform flex items-center justify-center gap-2 shadow-lg`}>RETRY SECTOR <RotateCcw /></button>
-          )}
-          <button onClick={() => setScreen('LEVEL_SELECT')} className="text-white/50 hover:text-white py-2">Sector Map</button>
+          {isWin && currentLevelId < 30 ? <button onClick={() => startLevel(currentLevelId + 1)} className="px-8 py-4 bg-neon-green text-black rounded-2xl font-black text-lg">NEXT SECTOR</button> : <button onClick={() => startLevel(currentLevelId)} className="px-8 py-4 bg-red-600 text-white rounded-2xl font-black text-lg">RETRY SECTOR</button>}
+          <button onClick={() => setScreen('LEVEL_SELECT')} className="text-white/40 font-bold uppercase tracking-widest">Sector Map</button>
         </div>
       </div>
      );
   }
 
-  const currentLevel = LEVELS.find(l => l.id === currentLevelId);
-  const timePercent = (timeLeft / maxTime) * 100;
-  const isTimeLow = timeLeft <= 10;
-
   return (
-    <div className="h-screen w-full bg-game-bg flex flex-col overflow-hidden">
-      <div className="h-16 flex items-center justify-between px-6 bg-game-panel border-b border-white/5 z-20 shadow-lg">
-        <button onClick={() => setScreen('LEVEL_SELECT')} className="text-white/60 hover:text-white"><Menu size={24} /></button>
+    <div className="h-screen w-full bg-game-bg flex flex-col overflow-hidden relative">
+      {/* Quantum Santa Layer - Bigger and more Detailed */}
+      {santaActive && (
+        <div className="absolute top-8 left-0 w-full pointer-events-none z-50 overflow-hidden h-40">
+          <style>{`
+            @keyframes fly { 
+              0% { transform: translateX(-300px); } 
+              100% { transform: translateX(calc(100vw + 300px)); } 
+            }
+          `}</style>
+          <div className="absolute flex flex-col items-center gap-1" style={{ animation: 'fly 3.5s linear forwards' }}>
+             <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-32 h-20 bg-gradient-to-br from-red-600 to-red-900 rounded-[40px_10px_40px_10px] border-4 border-white flex flex-col items-center justify-center shadow-[0_0_40px_rgba(255,0,0,0.6)]">
+                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center border-4 border-black">
+                      <div className="w-2 h-2 bg-black rounded-full mx-1" />
+                      <div className="w-2 h-2 bg-black rounded-full mx-1" />
+                    </div>
+                    <span className="text-xs font-black italic text-white mt-1 uppercase tracking-tighter">QUANTUM CLAWS</span>
+                  </div>
+                  <div className="absolute -top-4 -left-4 w-10 h-10 bg-white rounded-full border-2 border-red-500 animate-pulse" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <div className="text-neon-pink font-black italic text-xl animate-bounce bg-black/60 px-4 py-2 rounded-2xl border border-neon-pink/50 shadow-lg">HO! HO! HO!</div>
+                  <div className="text-white font-bold text-[10px] bg-red-600 px-2 rounded-full text-center">DROPPING BOMBS</div>
+                </div>
+             </div>
+             <div className="w-4 h-16 bg-gradient-to-b from-white to-transparent opacity-40 animate-pulse mt-2" />
+          </div>
+        </div>
+      )}
+
+      <div className="h-20 flex items-center justify-between px-6 bg-game-panel/80 backdrop-blur-md z-40">
+        <button onClick={() => setScreen('LEVEL_SELECT')} className="text-white/60"><Menu size={28} /></button>
         <div className="text-center">
-          <div className="text-neon-blue font-bold text-xl tracking-wider uppercase">Level {currentLevelId}</div>
+            <div className="text-neon-blue font-black text-2xl italic uppercase tracking-tighter">Level {currentLevelId}</div>
+            <div className="text-white/30 text-[10px] uppercase font-bold tracking-widest">Quantum Grid</div>
         </div>
-        <div className="flex gap-4">
-           <button onClick={handleMuteToggle} className="text-white/60 hover:text-white">{isMuted ? <VolumeX size={24}/> : <Volume2 size={24}/>}</button>
-           <button onClick={() => startLevel(currentLevelId)} className="text-white/60 hover:text-white"><RotateCcw size={24} /></button>
-        </div>
+        <button onClick={() => startLevel(currentLevelId)} className="text-white/60"><RotateCcw size={28} /></button>
       </div>
-      <div className="w-full h-1 bg-game-ui">
-        <div className={`h-full transition-all duration-1000 ease-linear ${isTimeLow ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-neon-blue shadow-[0_0_10px_#4CC9F0]'}`} style={{ width: `${timePercent}%` }} />
+
+      <div className="w-full h-1.5 bg-game-ui"><div className={`h-full transition-all duration-1000 ${timeLeft <= 10 ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-neon-blue shadow-[0_0_10px_#4CC9F0]'}`} style={{ width: `${(timeLeft/maxTime)*100}%` }} /></div>
+
+      <div className="flex-1 flex items-center justify-center p-4 relative bg-[#0a001a]">
+        {gameState && <Board grid={gameState.grid} enemies={gameState.enemies} beamPath={beamPath} onRotate={handleTileClick} isComplete={gameState.isComplete} lastNoisePos={gameState.lastNoisePos} activeProjectile={activeProjectile} />}
+        {bombMode && <div className="absolute inset-0 pointer-events-none flex items-center justify-center"><Crosshair size={320} className="text-neon-pink opacity-10 animate-pulse" /></div>}
       </div>
-      {currentLevel?.description && <div className="w-full bg-neon-purple/20 text-center py-2 text-xs text-neon-blue font-semibold border-b border-neon-purple/30 backdrop-blur-md uppercase tracking-widest">{currentLevel.description}</div>}
-      <div className="flex-1 flex items-center justify-center p-4 bg-gradient-to-b from-game-bg to-[#0a001a] relative">
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-neon-purple/10 rounded-full blur-[80px]"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-neon-blue/10 rounded-full blur-[80px]"></div>
-        {gameState && (
-          <Board 
-            grid={gameState.grid} 
-            enemies={gameState.enemies} 
-            beamPath={beamPath} 
-            onRotate={handleRotate} 
-            isComplete={gameState.isComplete}
-            lastNoisePos={gameState.lastNoisePos}
-          />
+
+      {/* Manual Catapult HUD */}
+      <div className="h-48 bg-game-panel/95 border-t-4 border-neon-blue/20 px-6 pt-4 pb-8 flex flex-col gap-4 shadow-2xl z-40">
+        {!bombMode ? (
+          <div className="grid grid-cols-3 h-full items-center">
+             <div className="flex flex-col items-center">
+               <div className="text-white/40 text-[9px] font-black uppercase mb-1">Noise Level</div>
+               <div className="text-white text-3xl font-mono font-black flex items-center gap-2 drop-shadow-neon">
+                  <Ghost size={24} className="text-neon-pink" /> {gameState?.moves}
+               </div>
+             </div>
+             <div className="flex flex-col items-center">
+                <button onClick={() => bombs > 0 && setBombMode(true)} disabled={bombs <= 0 || gameState?.isComplete} className={`w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all bg-game-ui border-4 border-neon-pink shadow-lg relative ${bombs <= 0 ? 'opacity-30 grayscale' : 'hover:scale-105 active:scale-90'}`}>
+                  <Bomb size={42} className="text-neon-pink" />
+                  <div className="absolute -top-1 -right-1 bg-neon-pink text-white text-xs font-black w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-md">{bombs}</div>
+                </button>
+                <span className="text-[10px] font-black text-neon-blue mt-2 uppercase tracking-widest">Weaponized Bomb</span>
+             </div>
+             <div className="flex flex-col items-center">
+               <div className="text-white/40 text-[9px] font-black uppercase mb-1">Stability</div>
+               <div className={`text-3xl font-mono font-black ${timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-neon-green'}`}>{timeLeft}s</div>
+             </div>
+          </div>
+        ) : (
+          <div className="flex flex-col h-full gap-4">
+            <div className="flex justify-between items-center text-white/60">
+                <span className="text-xs font-black uppercase text-neon-pink flex items-center gap-2"><Crosshair size={14} /> Adjusting Quantum Arc...</span>
+                <button onClick={() => setBombMode(false)} className="text-[10px] font-bold uppercase underline">Abort</button>
+            </div>
+            <div className="flex gap-6 items-center flex-1">
+              <div className="flex flex-col gap-2 flex-1">
+                <div className="flex justify-between text-[10px] font-black uppercase text-neon-blue"><span>Angle: {aimAngle}°</span></div>
+                <input type="range" min="-45" max="45" value={aimAngle} onChange={(e) => setAimAngle(Number(e.target.value))} className="w-full h-3 bg-game-ui rounded-full appearance-none cursor-pointer accent-neon-pink" />
+              </div>
+              <div className="flex flex-col gap-2 flex-1">
+                <div className="flex justify-between text-[10px] font-black uppercase text-neon-blue"><span>Power: {aimPower}%</span></div>
+                <input type="range" min="10" max="100" value={aimPower} onChange={(e) => setAimPower(Number(e.target.value))} className="w-full h-3 bg-game-ui rounded-full appearance-none cursor-pointer accent-neon-pink" />
+              </div>
+              <button onClick={launchBomb} className="w-24 h-20 bg-neon-pink rounded-3xl flex items-center justify-center shadow-[0_0_30px_#F72585] active:scale-90 transition-all border-4 border-white/20">
+                <span className="text-lg font-black text-white italic -rotate-12">FIRE!</span>
+              </button>
+            </div>
+          </div>
         )}
-      </div>
-      <div className="h-24 bg-game-panel/90 backdrop-blur-md border-t border-white/5 grid grid-cols-2 px-6">
-         <div className="flex flex-col justify-center border-r border-white/5 pr-6">
-           <div className="text-white/40 text-[10px] font-bold uppercase mb-1">Observation Noise</div>
-           <div className="text-white text-2xl font-mono flex items-center gap-2">
-              {gameState?.lastNoisePos ? <Ghost className="w-4 h-4 text-neon-pink animate-pulse" /> : <Lock className="w-4 h-4 text-white/20" />}
-              {gameState?.moves}
-           </div>
-         </div>
-         <div className="flex flex-col justify-center pl-6">
-           <div className="text-white/40 text-[10px] font-bold uppercase mb-1 flex items-center gap-1"><Timer size={12} /> Temporal Link</div>
-           <div className={`text-3xl font-mono font-bold ${isTimeLow ? 'text-red-500 animate-pulse' : 'text-neon-pink'}`}>{timeLeft}s</div>
-         </div>
       </div>
     </div>
   );
