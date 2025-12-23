@@ -19,40 +19,40 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
   const [lane, setLane] = useState(1);
   const [obstacles, setObstacles] = useState<Obstacle[]>([]);
   const [progress, setProgress] = useState(0);
-  const [speed, setSpeed] = useState(6.5);
+  const [speed, setSpeed] = useState(4.0); // Gentler start
   const [offset, setOffset] = useState(0);
   const [shake, setShake] = useState(false);
-  const gameRef = useRef<number>();
+  const gameRef = useRef<number>(0);
   const obstacleId = useRef(0);
+  
+  const laneRef = useRef(lane);
+  useEffect(() => { laneRef.current = lane; }, [lane]);
 
   const WIN_DISTANCE = 100;
+  const ROAD_HEIGHT = 600;
   const COLORS = ['#F72585', '#4CC9F0', '#39ff14', '#FFD60A', '#7209B7'];
 
   const moveObstacles = useCallback(() => {
     setObstacles(prev => {
-      const next = prev.map(o => ({ ...o, y: o.y + (speed * o.speedMod) })).filter(o => o.y < 950);
+      const next = prev.map(o => ({ ...o, y: o.y + (speed * o.speedMod) })).filter(o => o.y < ROAD_HEIGHT + 100);
       
-      const playerY = 550;
+      const playerY = 496; 
+      
       const collision = next.find(o => {
-        const isSameLane = o.lane === lane;
-        // Adjust hitboxes based on type
-        let hitZoneYStart = -60;
-        let hitZoneYEnd = 40;
+        const isSameLane = o.lane === laneRef.current;
+        
+        // Even more forgiving hitboxes
+        let hitZoneYStart = -35; 
+        let hitZoneYEnd = 25;   
         
         if (o.type === 'LASER_GATE') {
-          hitZoneYStart = -20;
-          hitZoneYEnd = 20;
-          return o.y > playerY + hitZoneYStart && o.y < playerY + hitZoneYEnd; // Laser gates span the whole width logic?
-          // Actually Laser Gates currently have a lane in the state but the visual is full width.
-          // Let's make LASER_GATE hit all lanes if not handled carefully, 
-          // but for simplicity in current code, if lane matches. 
-          // Actually, let's fix Laser Gate to be a full line obstacle where you must wait or pass? 
-          // Usually in these games laser gates have a flicker.
+          hitZoneYStart = -10;
+          hitZoneYEnd = 10;
         } else if (o.type === 'BLOCKADE') {
-          hitZoneYStart = -80;
-          hitZoneYEnd = 50;
+          hitZoneYStart = -50;
+          hitZoneYEnd = 35;
         } else if (o.type === 'TRUCK' || o.type === 'BUS') {
-          hitZoneYStart = -100;
+          hitZoneYStart = -70;
         }
 
         return isSameLane && o.y > playerY + hitZoneYStart && o.y < playerY + hitZoneYEnd;
@@ -60,7 +60,6 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
 
       if (collision) {
         setShake(true);
-        // CRITICAL: Crashing calls onLose which in App.tsx sets screen to GAME_OVER WITHOUT granting bombs.
         setTimeout(() => onLose(), 150);
         return prev;
       }
@@ -68,11 +67,15 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
     });
 
     setOffset(prev => (prev + speed) % 1000);
-    setProgress(p => p + 0.16);
-    if (progress >= WIN_DISTANCE) {
-      onWin();
-    }
-  }, [lane, speed, progress, onWin, onLose]);
+    
+    setProgress(p => {
+      const nextProgress = p + (speed / 75); 
+      if (nextProgress >= WIN_DISTANCE) {
+        onWin();
+      }
+      return nextProgress;
+    });
+  }, [speed, onWin, onLose]);
 
   useEffect(() => {
     const loop = () => {
@@ -81,9 +84,15 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
     };
     gameRef.current = requestAnimationFrame(loop);
 
+    return () => {
+      cancelAnimationFrame(gameRef.current!);
+    };
+  }, [moveObstacles]);
+
+  useEffect(() => {
     const spawn = setInterval(() => {
-      // Logic for "obstacles in lines" - occasionally spawn a "wall" with one gap
-      const isWall = Math.random() < 0.3; // 30% chance for a line pattern
+      // Further reduced wall spawn probability to 10%
+      const isWall = Math.random() < 0.10;
       
       if (isWall) {
         const gapLane = Math.floor(Math.random() * 3);
@@ -113,18 +122,16 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
             y: -200,
             type,
             color: COLORS[Math.floor(Math.random() * COLORS.length)],
-            speedMod: type === 'DRONE' ? 1.7 : type === 'LASER_GATE' ? 0.9 : type === 'TRUCK' ? 0.8 : 1.1
+            speedMod: type === 'DRONE' ? 1.3 : type === 'LASER_GATE' ? 0.8 : type === 'TRUCK' ? 0.7 : 1.0
           }
         ]);
       }
-      setSpeed(s => Math.min(s + 0.05, 17));
-    }, 600);
+      // Very slow speed increment and lower max cap of 10
+      setSpeed(s => Math.min(s + 0.015, 10));
+    }, 900); // Increased interval to allow more reaction time
 
-    return () => {
-      cancelAnimationFrame(gameRef.current!);
-      clearInterval(spawn);
-    };
-  }, [moveObstacles]);
+    return () => clearInterval(spawn);
+  }, []);
 
   const VehicleIcon = ({ obs }: { obs: Obstacle }) => {
     switch (obs.type) {
@@ -179,7 +186,6 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
 
   return (
     <div className={`h-full w-full bg-game-bg flex flex-col items-center justify-center relative overflow-hidden font-black transition-transform duration-75 ${shake ? 'translate-x-4' : ''}`}>
-      {/* Background Parallax Neon City */}
       <div className="absolute inset-0 z-0">
         <div className="absolute inset-0 bg-gradient-to-b from-[#10002B] via-[#240046] to-black" />
         {[...Array(20)].map((_, i) => (
@@ -205,17 +211,12 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
         </div>
       </div>
       
-      <div className="w-full max-w-sm h-[650px] bg-black/50 backdrop-blur-md relative border-x-4 border-neon-blue/20 overflow-hidden shadow-2xl">
-        {/* Road markings */}
+      <div className="w-full max-w-sm h-[600px] bg-black/50 backdrop-blur-md relative border-x-4 border-neon-blue/20 overflow-hidden shadow-2xl">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute left-1/3 w-2 h-full border-r-4 border-dashed border-white/10" style={{ backgroundPositionY: offset }} />
           <div className="absolute left-2/3 w-2 h-full border-r-4 border-dashed border-white/10" style={{ backgroundPositionY: offset }} />
         </div>
 
-        {/* Static Hazard Effects */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_rgba(76,201,240,0.1)_0%,_transparent_70%)]" />
-
-        {/* Obstacles */}
         {obstacles.map(o => (
           <div 
             key={o.id}
@@ -230,12 +231,11 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
           </div>
         ))}
 
-        {/* Player Car */}
         <div 
           className="absolute w-24 h-32 transition-all duration-150 ease-out z-40"
-          style={{ left: `${lane * 33.33 + 4}%`, top: 520 }}
+          style={{ left: `${lane * 33.33 + 4}%`, bottom: 40 }}
         >
-          <div className="w-full h-full bg-neon-green rounded-2xl border-4 border-white shadow-[0_0_35px_#39ff14] flex flex-col items-center justify-center relative overflow-hidden group">
+          <div className="w-full h-full bg-neon-green rounded-2xl border-4 border-white shadow-[0_0_35px_#39ff14] flex flex-col items-center justify-center relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
             <div className="w-16 h-10 bg-slate-900 rounded-lg mt-2 relative overflow-hidden">
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-neon-green/60 animate-pulse" />
@@ -249,7 +249,6 @@ const RacingGame: React.FC<RacingGameProps> = ({ onWin, onLose }) => {
         </div>
       </div>
 
-      {/* Controls */}
       <div className="mt-8 flex gap-8 w-full max-w-sm px-6 z-50">
         <button 
           onPointerDown={() => setLane(l => Math.max(0, l - 1))} 

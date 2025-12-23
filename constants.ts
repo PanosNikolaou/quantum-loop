@@ -7,13 +7,18 @@ export const DIRECTIONS = {
   LEFT: 3,
 } as const;
 
-const T = (type: TileType, rotation = 0, fixed = false, group = EntanglementGroup.NONE): TileState => ({
-  type,
-  rotation,
-  fixed,
-  group,
-  id: Math.random().toString(36).substr(2, 9),
-});
+const T = (type: TileType, rotation = 0, fixed = false, group = EntanglementGroup.NONE): TileState => {
+  // If not fixed, start with a random rotation to prevent "autosolve"
+  const startRotation = fixed ? rotation : Math.floor(Math.random() * 4);
+  
+  return {
+    type,
+    rotation: startRotation,
+    fixed,
+    group,
+    id: Math.random().toString(36).substr(2, 9),
+  };
+};
 
 const createLevel = (id: number, size: number, layout: string[], par: number, desc?: string): LevelData => {
   const tiles: TileState[][] = [];
@@ -68,7 +73,6 @@ export const LEVELS: LevelData[] = [
   createLevel(11, 6, ["S-7...","..|...","..@...","....@.","....|.","....LE"], 10, "Tunneling: S-7 to Portal."),
   createLevel(12, 6, ["S-7...","..|...","..L-@.","......","..@-7.","....LE"], 12, "Phase Jump."),
 
-  // REDESIGNED LEVEL 13 - Solvable superposition path
   createLevel(13, 6, [
     "S-?--7", 
     ".....|",
@@ -78,20 +82,65 @@ export const LEVELS: LevelData[] = [
     "......"
   ], 8, "Simplified Observation."),
 
-  createLevel(14, 6, ["S-*...","....|.","..G-?.","..|...","..L-E.","......"], 8, "Logic Gate."),
-  createLevel(15, 6, ["S-?...","..G-@.","..*...","......","..@-?.","....E."], 10, "Quantum Sequence."),
-  createLevel(16, 6, ["S-J...","..*...","L-G-7.","|.....","L---E."], 12, "U-Turn."),
+  createLevel(14, 6, [
+    "S*7...",
+    "..LG-E",
+    "......",
+    "......",
+    "......",
+    "......"
+  ], 12, "Logic Gate Sequencing."),
+
+  createLevel(15, 6, [
+    "S-7...", 
+    "..*...", 
+    "..L-G7", 
+    ".....@", 
+    "@.....", 
+    "L-E..."
+  ], 15, "Quantum Sequence."),
+
+  // FIXED LEVEL 16: New solvable layout
+  createLevel(16, 6, [
+    "S-7...",
+    "..*...",
+    "..G...",
+    "..L--7",
+    ".....|",
+    ".....E"
+  ], 14, "Gate Control Flow."),
+
   createLevel(17, 7, ["S-L...L","..|...|","..*-G.|","....|.|","L-G.|.|","|...L-L","L-L...E"], 20, "Binary Path."),
   createLevel(18, 7, ["S-A-@.A","..|...|","..G-A.|","..*...|","A-A.|.|","|...A-A","A-A...E"], 22, "Quantum Logic."),
   createLevel(19, 7, ["S-L....","..A...*","..L-G.|","....|.|","B...|.|","L---B.|","......E"], 16, "Locked Sector."),
   createLevel(20, 7, ["S-*-G-D","......|","......D","......|","......D","......|","C-C-C-E"], 14, "Power Grid."),
   createLevel(21, 7, ["S-?..?.", "..|.|..", "..L+L..", "...*...", "..G+L..", "..|.|..", "L-L.L-E"], 25, "System Core."),
   createLevel(22, 7, ["S-A.A-A", "..|.|..", "*-G.A-B", "|.....|", "B-A.A-B", "..|.|..", "..A.A-E"], 30, "Firewall."),
-  createLevel(23, 7, ["#.#V#.#", "#.#*#.#", "#.G.B.#", "#.A.A.#", "#.B.B.#", "#.#A#.#", "#.#E#.#"], 20, "Pressure Plate."),
+  
+  createLevel(23, 7, [
+    "###V###", 
+    "###*###", 
+    "###G###", 
+    "###D###", 
+    "###C###", 
+    "###D###", 
+    "###E###"
+  ], 20, "Pressure Plate."),
+
   createLevel(24, 7, ["S-C-C-L", "|.....|", "*-G-C-C", "......|", "......C", "......|", "......E"], 10, "Direct Current."),
   createLevel(25, 7, ["S...*...", "....G...", "....L-L.", "......|.", "L-L-L-L.", "|.......", "L-----E."], 15, "Long Loop."),
   createLevel(26, 7, ["S-A-*-A", "|...G.|", "B.....B", "|.....|", "A.....A", "|.....|", "L.....E"], 22, "Outer Logic."),
-  createLevel(27, 7, ["S-A-*-C", "|.+.G.|", "C.+.+.C", "|.+.+.|", "B.+.+.B", "|.+.+.|", "L-C-D-E"], 20, "Interference."),
+  
+  createLevel(27, 7, [
+    "S-C-*-C", 
+    "|.|.G.|", 
+    "C+C-C+C", 
+    "|.|...|", 
+    "B+B-B+B", 
+    "|.|...|", 
+    "L-C-D-E"
+  ], 20, "Interference."),
+
   createLevel(28, 7, ["S-*-G-L", "|.....|", "L-C-C-L", "......|", "L-C-C-L", "|......", "L-C-C-E"], 25, "The Spiral V2."),
   createLevel(29, 7, ["S-A-A-A", "|.B-*-|", "|.|.G.|", "|.L-C.|", "|...|.|", "|.B-B.|", "A-A-A-E"], 30, "Deep Logic."),
   createLevel(30, 7, ["S.A.B.A", ".C.D.C.", "A.B.A.B", ".D.+.D.", "B.A.B.A", ".C.D.C.", "A.B.A.E"], 40, "End of Loop.")

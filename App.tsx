@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, RotateCcw, Menu, Star, ChevronRight, Lock, Timer, AlertTriangle, Volume2, VolumeX, Ghost, Bomb, Crosshair, Target, Gift, BookOpen } from 'lucide-react';
+import { Play, RotateCcw, Menu, Star, ChevronRight, Lock, Timer, AlertTriangle, Volume2, VolumeX, Ghost, Bomb, Crosshair, Target, Gift, BookOpen, Facebook, Cloud, LogOut } from 'lucide-react';
 import { LEVELS } from './constants';
-import { GameState, EntanglementGroup, GridPos, Enemy, TileType, EnemyType } from './types';
+import { GameState, EntanglementGroup, GridPos, Enemy, TileType, EnemyType, BeamSegment } from './types';
 import { calculateBeam } from './utils/gameLogic';
 import Board from './components/Board';
 import RacingGame from './components/RacingGame';
@@ -9,6 +9,12 @@ import Instructions from './components/Instructions';
 import { audioManager } from './utils/audio';
 
 type Screen = 'MENU' | 'GAME' | 'LEVEL_SELECT' | 'WIN' | 'GAME_OVER' | 'RACING' | 'INSTRUCTIONS';
+
+interface UserProfile {
+  name: string;
+  picture?: string;
+  id: string;
+}
 
 const vibrate = (ms: number | number[]) => {
   try { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms); } catch (e) { }
@@ -18,10 +24,13 @@ const App: React.FC = () => {
   const [screen, setScreen] = useState<Screen>('MENU');
   const [currentLevelId, setCurrentLevelId] = useState(1);
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [beamPath, setBeamPath] = useState<any[]>([]);
+  const [beamPath, setBeamPath] = useState<BeamSegment[]>([]);
+  const beamPathRef = useRef<BeamSegment[]>([]);
   const [unlockedLevels, setUnlockedLevels] = useState<number>(1);
   const [isMuted, setIsMuted] = useState(false);
   const [bombs, setBombs] = useState(3);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Catapult State
   const [bombMode, setBombMode] = useState(false);
@@ -33,6 +42,66 @@ const App: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [maxTime, setMaxTime] = useState(0);
   const timerRef = useRef<number | null>(null);
+
+  // Load initial progress
+  useEffect(() => {
+    const saved = localStorage.getItem('quantum_loop_progress');
+    if (saved) {
+      const { unlocked, savedBombs } = JSON.parse(saved);
+      setUnlockedLevels(unlocked);
+      setBombs(savedBombs);
+    }
+  }, []);
+
+  // Save progress locally
+  useEffect(() => {
+    localStorage.setItem('quantum_loop_progress', JSON.stringify({
+      unlocked: unlockedLevels,
+      savedBombs: bombs
+    }));
+  }, [unlockedLevels, bombs]);
+
+  const handleFacebookLogin = () => {
+    setIsSyncing(true);
+    vibrate(20);
+    
+    const FB = (window as any).FB;
+    if (FB) {
+      FB.login((response: any) => {
+        if (response.authResponse) {
+          FB.api('/me', { fields: 'name,picture' }, (profile: any) => {
+            setUser({
+              name: profile.name,
+              picture: profile.picture?.data?.url,
+              id: profile.id
+            });
+            setIsSyncing(false);
+            vibrate([50, 30, 50]);
+          });
+        } else {
+          simulateLogin();
+        }
+      });
+    } else {
+      simulateLogin();
+    }
+  };
+
+  const simulateLogin = () => {
+    setTimeout(() => {
+      setUser({
+        name: "Quantum Voyager",
+        id: "mock-123"
+      });
+      setIsSyncing(false);
+      vibrate([50, 30, 50]);
+    }, 1500);
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    vibrate(10);
+  };
 
   const startLevel = useCallback((levelId: number) => {
     audioManager.init();
@@ -77,13 +146,11 @@ const App: React.FC = () => {
   // Quantum Santa Random Event
   useEffect(() => {
     if (screen !== 'GAME' || !gameState || gameState.isComplete || santaActive) return;
-
     const santaInterval = setInterval(() => {
       if (gameState.enemies.length > 0 && Math.random() < 0.05) {
         triggerSanta();
       }
     }, 15000);
-
     return () => clearInterval(santaInterval);
   }, [screen, gameState?.enemies.length, santaActive]);
 
@@ -123,7 +190,7 @@ const App: React.FC = () => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [screen, gameState?.isComplete]);
 
-  // Dinosaur AI
+  // Dinosaur Species-Specific Intelligent AI
   useEffect(() => {
     if (screen !== 'GAME' || !gameState || gameState.isComplete) return;
     const tickInterval = setInterval(() => {
@@ -132,41 +199,95 @@ const App: React.FC = () => {
         const newTick = prev.tickCount + 1;
         const newEnemies: Enemy[] = [];
         const occupied = new Set<string>();
+        const gridRows = prev.grid.length;
+        const gridCols = prev.grid[0].length;
+
         prev.enemies.forEach(e => {
-          if (!(e.type === EnemyType.SPRINTER || newTick % 2 === 0)) { newEnemies.push(e); occupied.add(`${e.r},${e.c}`); return; }
-          const candidates = [{r:e.r-1,c:e.c},{r:e.r+1,c:e.c},{r:e.r,c:e.c-1},{r:e.r,c:e.c+1}].filter(p => p.r>=0 && p.r<prev.grid.length && p.c>=0 && p.c<prev.grid[0].length);
+          // Sprinters move twice as often (every tick)
+          // Others move every 2 ticks
+          const shouldMove = e.type === EnemyType.SPRINTER || newTick % 2 === 0;
+          if (!shouldMove) {
+            newEnemies.push(e);
+            occupied.add(`${e.r},${e.c}`);
+            return;
+          }
+
+          let targetPos: GridPos | null = null;
+
+          // DETERMINING INTELLIGENT TARGET
+          if (e.type === EnemyType.STALKER && prev.lastNoisePos) {
+            // STALKER: Pure noise tracking
+            targetPos = prev.lastNoisePos;
+          } else if (e.type === EnemyType.GLITCHER && beamPathRef.current.length > 0) {
+            // GLITCHER: Sabotage active beam
+            const activePath = beamPathRef.current.filter(seg => seg.active);
+            if (activePath.length > 0) {
+              // Find nearest active beam segment
+              const nearest = activePath.reduce((closest, curr) => {
+                const dist = Math.abs(curr.r - e.r) + Math.abs(curr.c - e.c);
+                if (!closest || dist < closest.dist) return { r: curr.r, c: curr.c, dist };
+                return closest;
+              }, null as {r: number, c: number, dist: number} | null);
+              if (nearest) targetPos = { r: nearest.r, c: nearest.c };
+            }
+          }
+
+          // CHOOSE MOVE
+          const candidates = [
+            {r:e.r-1, c:e.c}, {r:e.r+1, c:e.c}, {r:e.r, c:e.c-1}, {r:e.r, c:e.c+1}
+          ].filter(p => p.r>=0 && p.r<gridRows && p.c>=0 && p.c<gridCols);
+
           let move = candidates[Math.floor(Math.random() * candidates.length)];
-          if (prev.lastNoisePos) move = candidates.reduce((best, curr) => (Math.abs(curr.r-prev.lastNoisePos!.r)+Math.abs(curr.c-prev.lastNoisePos!.c)) < (Math.abs(best.r-prev.lastNoisePos!.r)+Math.abs(best.c-prev.lastNoisePos!.c)) ? curr : best, move);
-          if (occupied.has(`${move.r},${move.c}`)) { newEnemies.push(e); occupied.add(`${e.r},${e.c}`); } 
-          else { newEnemies.push({ ...e, r: move.r, c: move.c }); occupied.add(`${move.r},${move.c}`); }
+          
+          if (targetPos) {
+            // Intelligent move: Choose candidate closest to target
+            move = candidates.reduce((best, curr) => {
+              const bestDist = Math.abs(best.r - targetPos!.r) + Math.abs(best.c - targetPos!.c);
+              const currDist = Math.abs(curr.r - targetPos!.r) + Math.abs(curr.c - targetPos!.c);
+              return currDist < bestDist ? curr : best;
+            }, move);
+          }
+
+          if (occupied.has(`${move.r},${move.c}`)) {
+            newEnemies.push(e);
+            occupied.add(`${move.r},${move.c}`);
+          } else {
+            newEnemies.push({ ...e, r: move.r, c: move.c });
+            occupied.add(`${move.r},${move.c}`);
+          }
         });
+
+        // TILE DISRUPTION LOGIC
         const newGrid = prev.grid.map(row => row.map(t => ({ ...t })));
         let changed = false;
         newEnemies.forEach(e => {
           const tile = newGrid[e.r][e.c];
-          if (!tile.fixed && tile.type !== TileType.EMPTY && tile.type !== TileType.BLOCK && tile.type !== TileType.SINK) {
-            if (Math.random() < ((prev.lastNoisePos && e.r === prev.lastNoisePos.r && e.c === prev.lastNoisePos.c) ? 0.6 : 0.05)) { tile.rotation = (tile.rotation + 1) % 4; changed = true; }
+          if (!tile.fixed && tile.type !== TileType.EMPTY && tile.type !== TileType.BLOCK && tile.type !== TileType.SINK && tile.type !== TileType.SOURCE) {
+            // Glitchers have higher sabotage chance
+            const sabotageChance = e.type === EnemyType.GLITCHER ? 0.35 : 0.08;
+            if (Math.random() < sabotageChance) {
+              tile.rotation = (tile.rotation + 1) % 4;
+              changed = true;
+            }
           }
         });
+
         if (changed) audioManager.playEnemyEffect();
         return { ...prev, enemies: newEnemies, grid: newGrid, tickCount: newTick };
       });
-    }, 1200);
+    }, 1000); // Slightly faster game pace
     return () => clearInterval(tickInterval);
   }, [screen, gameState?.isComplete]); 
 
   const launchBomb = () => {
     if (bombs <= 0 || !gameState) return;
-    
     const gridRows = gameState.grid.length;
     const gridCols = gameState.grid[0].length;
     const maxDist = gridRows * 0.95;
     const dist = (aimPower / 100) * maxDist;
     const angleRad = (aimAngle - 90) * (Math.PI / 180);
-    
     const targetR = Math.round(gridRows - 1 + Math.sin(angleRad) * dist);
     const targetC = Math.round((gridCols / 2) + Math.cos(angleRad) * dist);
-    
     const clampedR = Math.max(0, Math.min(gridRows - 1, targetR));
     const clampedC = Math.max(0, Math.min(gridCols - 1, targetC));
     const targetPos = { r: clampedR, c: clampedC };
@@ -195,24 +316,50 @@ const App: React.FC = () => {
     if (tile.fixed || tile.tempFixedUntil || tile.type === TileType.EMPTY || tile.type === TileType.BLOCK) return;
     vibrate(10); audioManager.playRotate();
     const newGrid = grid.map(row => row.map(t => ({ ...t })));
-    newGrid.forEach((row, r) => row.forEach((t, c) => {
-      if ((r === pos.r && c === pos.c) || (tile.group !== EntanglementGroup.NONE && t.group === tile.group)) {
-        if (!t.fixed && !t.tempFixedUntil) t.rotation = (t.rotation + 1) % 4;
-      }
-    }));
-    setGameState(prev => ({ ...prev!, grid: newGrid, moves: prev!.moves + 1, lastNoisePos: pos }));
+    
+    // Quantum Flitter Logic: Fear of clicks
+    const terrifiedFlitters = gameState.enemies.filter(e => e.type === EnemyType.FLITTER && Math.abs(e.r - pos.r) <= 2 && Math.abs(e.c - pos.c) <= 2);
+    
+    setGameState(prev => {
+      if (!prev) return null;
+      let nextEnemies = [...prev.enemies];
+      
+      // Flitters teleport away when you click near them
+      terrifiedFlitters.forEach(tf => {
+        const idx = nextEnemies.findIndex(e => e.id === tf.id);
+        if (idx !== -1 && Math.random() < 0.7) {
+          const randR = Math.floor(Math.random() * prev.grid.length);
+          const randC = Math.floor(Math.random() * prev.grid[0].length);
+          nextEnemies[idx] = { ...nextEnemies[idx], r: randR, c: randC };
+          vibrate(30);
+        }
+      });
+
+      newGrid.forEach((row, r) => row.forEach((t, c) => {
+        if ((r === pos.r && c === pos.c) || (tile.group !== EntanglementGroup.NONE && t.group === tile.group)) {
+          if (!t.fixed && !t.tempFixedUntil) t.rotation = (t.rotation + 1) % 4;
+        }
+      }));
+
+      return { ...prev, grid: newGrid, moves: prev.moves + 1, lastNoisePos: pos, enemies: nextEnemies };
+    });
   }, [gameState, bombMode]);
 
   useEffect(() => {
     if (!gameState) return;
     const { path, isComplete } = calculateBeam(gameState.grid);
     setBeamPath(path);
+    beamPathRef.current = path;
     if (isComplete && !gameState.isComplete) {
        audioManager.playWin();
        setGameState(prev => ({ ...prev!, isComplete: true }));
        setTimeout(() => {
-         if (currentLevelId % 5 === 0) setScreen('RACING');
-         else { if (currentLevelId >= unlockedLevels && currentLevelId < 30) setUnlockedLevels(currentLevelId + 1); setScreen('WIN'); }
+         if (currentLevelId % 5 === 0) {
+            setScreen('RACING');
+         } else { 
+            if (currentLevelId >= unlockedLevels && currentLevelId < 30) setUnlockedLevels(currentLevelId + 1); 
+            setScreen('WIN'); 
+         }
        }, 800);
     }
   }, [gameState?.grid, currentLevelId, unlockedLevels]);
@@ -221,30 +368,66 @@ const App: React.FC = () => {
     return (
       <div className="h-screen w-full bg-game-bg flex flex-col items-center justify-center p-6 text-center space-y-10 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-neon-purple/20 via-transparent to-transparent opacity-50" />
+        <div className="absolute top-8 w-full flex justify-between px-8 items-center z-20">
+          {user ? (
+            <div className="flex items-center gap-3 bg-game-panel/60 p-2 pr-4 rounded-full border border-white/10 backdrop-blur-sm">
+               {user.picture ? <img src={user.picture} className="w-8 h-8 rounded-full border border-neon-blue" /> : <div className="w-8 h-8 rounded-full bg-neon-blue/20 flex items-center justify-center"><Cloud size={14} className="text-neon-blue"/></div>}
+               <span className="text-[10px] font-black uppercase text-white/80">{user.name}</span>
+               <button onClick={handleLogout} className="p-1 text-white/40 hover:text-red-400 transition-colors"><LogOut size={14}/></button>
+            </div>
+          ) : (
+            <div className="text-[10px] font-black uppercase text-white/30 flex items-center gap-2 tracking-widest"><Cloud size={12}/> Offline Mode</div>
+          )}
+          <button onClick={() => setScreen('INSTRUCTIONS')} className="text-white/40"><BookOpen size={24}/></button>
+        </div>
         <h1 className="text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-neon-blue via-neon-pink to-neon-purple animate-pulse-fast drop-shadow-2xl z-10">QUANTUM<br/>LOOP</h1>
-        
         <div className="flex flex-col gap-4 w-full max-w-xs z-10">
           <button onClick={() => setScreen('LEVEL_SELECT')} className="px-12 py-6 bg-gradient-to-r from-neon-blue to-neon-purple rounded-3xl text-2xl font-black text-white shadow-[0_0_30px_rgba(76,201,240,0.4)] hover:scale-105 active:scale-95 transition-all">
             INITIATE
           </button>
-          <button onClick={() => setScreen('INSTRUCTIONS')} className="px-8 py-4 bg-game-ui/40 border border-white/10 rounded-2xl text-lg font-bold text-white flex items-center justify-center gap-2 hover:bg-game-ui/60 transition-all">
-            <BookOpen size={24} className="text-neon-pink" /> HOW TO PLAY
-          </button>
+          {!user && (
+            <button 
+              onClick={handleFacebookLogin} 
+              disabled={isSyncing}
+              className={`fb-button px-6 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 ${isSyncing ? 'opacity-50 grayscale' : 'hover:bg-[#1877F2]/20'}`}
+            >
+              {isSyncing ? <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Facebook size={24} className="text-[#1877F2] fill-[#1877F2]" />}
+              <span className="text-xs font-black uppercase tracking-widest text-[#1877F2]">{isSyncing ? 'Syncing...' : 'Sync Progress'}</span>
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
   if (screen === 'INSTRUCTIONS') return <Instructions onBack={() => setScreen('MENU')} />;
-
-  if (screen === 'RACING') return <RacingGame onWin={() => { setBombs(b => b + 3); if (currentLevelId >= unlockedLevels && currentLevelId < 30) setUnlockedLevels(currentLevelId + 1); setScreen('WIN'); }} onLose={() => setScreen('GAME_OVER')} />;
+  
+  if (screen === 'RACING') {
+    return (
+      <RacingGame 
+        onWin={() => { 
+          setBombs(b => b + 3); 
+          if (currentLevelId >= unlockedLevels && currentLevelId < 30) setUnlockedLevels(currentLevelId + 1); 
+          setScreen('WIN'); 
+        }} 
+        onLose={() => {
+          // If lost, still unlock next level because the puzzle was solved
+          if (currentLevelId >= unlockedLevels && currentLevelId < 30) setUnlockedLevels(currentLevelId + 1); 
+          setScreen('WIN'); 
+        }} 
+      />
+    );
+  }
 
   if (screen === 'LEVEL_SELECT') {
     return (
       <div className="h-screen w-full bg-game-bg flex flex-col p-6">
         <div className="flex justify-between items-center mb-8">
            <button onClick={() => setScreen('MENU')} className="p-3 bg-game-panel border border-white/10 text-white rounded-2xl"><RotateCcw size={24}/></button>
-           <h2 className="text-3xl font-black text-white italic tracking-tighter uppercase">Sectors</h2>
+           <div className="text-center">
+             <h2 className="text-3xl font-black text-white italic tracking-tighter uppercase">Sectors</h2>
+             {user && <div className="text-[8px] font-black text-neon-blue uppercase tracking-[0.3em] flex items-center justify-center gap-1"><Cloud size={8}/> Quantized</div>}
+           </div>
            <button onClick={() => setIsMuted(audioManager.toggleMute())} className="p-3 bg-game-panel border border-white/10 text-white rounded-2xl">{isMuted ? <VolumeX size={24}/> : <Volume2 size={24}/>}</button>
         </div>
         <div className="flex-1 overflow-y-auto grid grid-cols-4 gap-4 pb-8">
@@ -323,7 +506,6 @@ const App: React.FC = () => {
         {bombMode && <div className="absolute inset-0 pointer-events-none flex items-center justify-center"><Crosshair size={320} className="text-neon-pink opacity-10 animate-pulse" /></div>}
       </div>
 
-      {/* Manual Catapult HUD */}
       <div className="h-48 bg-game-panel/95 border-t-4 border-neon-blue/20 px-6 pt-4 pb-8 flex flex-col gap-4 shadow-2xl z-40">
         {!bombMode ? (
           <div className="grid grid-cols-3 h-full items-center">

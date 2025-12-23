@@ -28,6 +28,7 @@
               'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
               'glow': 'glow 2s ease-in-out infinite alternate',
               'ping-slow': 'ping 2s cubic-bezier(0, 0, 0.2, 1) infinite',
+              'spin-slow': 'spin 8s linear infinite',
             },
             keyframes: {
               glow: {
@@ -56,6 +57,11 @@
         backdrop-filter: blur(8px);
         border: 1px solid rgba(247, 37, 133, 0.2);
       }
+      .fb-button {
+        background: rgba(24, 119, 242, 0.1);
+        border: 2px solid #1877F2;
+        box-shadow: 0 0 15px rgba(24, 119, 242, 0.3);
+      }
     </style>
   <script type="importmap">
 {
@@ -69,6 +75,19 @@
 </script>
 </head>
   <body>
+    <!-- Facebook SDK -->
+    <div id="fb-root"></div>
+    <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
+    <script>
+      window.fbAsyncInit = function() {
+        FB.init({
+          appId      : 'placeholder-id', // Real App ID would go here
+          cookie     : true,
+          xfbml      : true,
+          version    : 'v18.0'
+        });
+      };
+    </script>
     <div id="root"></div>
   </body>
 </html>

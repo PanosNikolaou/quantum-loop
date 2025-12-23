@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { TileState, TileType, EntanglementGroup } from '../types';
-import { Lock, Zap, Target, X, Infinity, Square, ShieldAlert, Ghost, ShieldCheck } from 'lucide-react';
+import { Lock, Zap, Target, X, Infinity, Square, ShieldAlert, Ghost, ShieldCheck, ChevronRight } from 'lucide-react';
 
 interface TileProps {
   tile: TileState;
@@ -40,7 +40,14 @@ const Tile: React.FC<TileProps> = ({ tile, onClick, size }) => {
   const renderIcon = () => {
     switch (tile.type) {
       case TileType.SOURCE:
-        return <Zap className="w-2/3 h-2/3 text-neon-yellow fill-neon-yellow animate-pulse drop-shadow-[0_0_5px_rgba(255,214,10,0.8)]" />;
+        return (
+          <div className="relative w-full h-full flex items-center justify-center">
+            <Zap className="w-1/2 h-1/2 text-neon-yellow fill-neon-yellow animate-pulse drop-shadow-[0_0_5px_rgba(255,214,10,0.8)]" />
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 text-neon-yellow animate-ping-slow">
+              <ChevronRight size={size * 0.3} strokeWidth={4} />
+            </div>
+          </div>
+        );
       case TileType.SINK:
         return <Target className="w-2/3 h-2/3 text-white drop-shadow-[0_0_5px_rgba(255,255,255,0.8)]" />;
       case TileType.BLOCK:
@@ -80,7 +87,7 @@ const Tile: React.FC<TileProps> = ({ tile, onClick, size }) => {
       case TileType.STRAIGHT:
          return (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-             <div className={`w-[6px] h-full ${innerColor.replace('text', 'bg')} rounded-full`} />
+             <div className={`h-[6px] w-full ${innerColor.replace('text', 'bg')} rounded-full`} />
           </div>
         );
       case TileType.CROSS:
